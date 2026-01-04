@@ -3,7 +3,8 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Profile from './buyer/Profile';
 import Orders from './buyer/Orders';
-import { FiUser, FiPackage } from 'react-icons/fi';
+import Points from './buyer/Points';
+import { FiUser, FiPackage, FiStar } from 'react-icons/fi';
 
 const BuyerDashboard = () => {
   const { user } = useAuth();
@@ -12,6 +13,7 @@ const BuyerDashboard = () => {
   const navigation = [
     { name: 'Profile', href: '/dashboard/buyer/profile', icon: FiUser },
     { name: 'Orders', href: '/dashboard/buyer/orders', icon: FiPackage },
+    { name: 'TrendPoints', href: '/dashboard/buyer/points', icon: FiStar },
   ];
 
   return (
@@ -56,6 +58,7 @@ const BuyerDashboard = () => {
             <Routes>
               <Route path="profile" element={<Profile />} />
               <Route path="orders" element={<Orders />} />
+              <Route path="points" element={<Points />} />
               <Route path="" element={<Profile />} />
             </Routes>
           </div>

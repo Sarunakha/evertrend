@@ -3,8 +3,14 @@ import { body, validationResult } from 'express-validator';
 import Order from '../models/Order.js';
 import OrderItem from '../models/OrderItem.js';
 import Product from '../models/Product.js';
+import Coupon from '../models/Coupon.js';
+import LoyaltyPoints from '../models/LoyaltyPoints.js';
+import PointTransaction from '../models/PointTransaction.js';
 import { protect, authorize, checkOwnership } from '../middleware/auth.js';
 import { processPayment } from '../services/paymentService.js';
+
+// Points earning rate: 1 point per Rs.25
+const POINTS_PER_RUPEE = 1 / 25;
 
 const router = express.Router();
 
@@ -110,7 +116,8 @@ router.post('/', [
   body('items.*.productId').notEmpty().withMessage('Product ID is required'),
   body('items.*.quantity').isInt({ min: 1 }).withMessage('Valid quantity is required'),
   body('paymentMethod').isIn(['eSewa', 'Cash on Delivery', 'Bank Transfer']),
-  body('shippingAddress').optional().isObject()
+  body('shippingAddress').optional().isObject(),
+  body('couponCode').optional().trim()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -121,7 +128,7 @@ router.post('/', [
       });
     }
 
-    const { items, paymentMethod, shippingAddress } = req.body;
+    const { items, paymentMethod, shippingAddress, couponCode } = req.body;
 
     // Validate products and calculate total
     let totalAmount = 0;
@@ -161,13 +168,57 @@ router.post('/', [
       });
     }
 
+    // Apply coupon if provided
+    let couponDiscount = 0;
+    let coupon = null;
+    if (couponCode) {
+      coupon = await Coupon.findOne({ code: couponCode.toUpperCase() });
+      
+      if (!coupon) {
+        return res.status(404).json({
+          success: false,
+          message: 'Coupon not found'
+        });
+      }
+
+      if (!coupon.isValid()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Coupon is expired or inactive'
+        });
+      }
+
+      // Check minimum purchase amount
+      if (totalAmount < coupon.minPurchaseAmount) {
+        return res.status(400).json({
+          success: false,
+          message: `Minimum purchase amount is Rs.${coupon.minPurchaseAmount}`
+        });
+      }
+
+      // Calculate discount
+      couponDiscount = coupon.calculateDiscount(totalAmount);
+      
+      // Use coupon
+      await coupon.useCoupon();
+    }
+
+    // Calculate final amount after discount
+    const finalAmount = totalAmount - couponDiscount;
+
+    // Calculate points to be earned (based on final amount after discount)
+    const pointsEarned = Math.floor(finalAmount * POINTS_PER_RUPEE);
+
     // Create order
     const order = await Order.create({
       userId: req.user._id,
-      totalAmount,
+      totalAmount: finalAmount, // Store final amount after discount
       paymentMethod,
       shippingAddress,
-      status: 'Pending'
+      status: 'Pending',
+      couponCode: couponCode ? couponCode.toUpperCase() : null,
+      couponDiscount,
+      pointsEarned
     });
 
     // Create order items and update products
@@ -188,9 +239,41 @@ router.post('/', [
     // Process payment if eSewa
     let transactionId = null;
     if (paymentMethod === 'eSewa') {
-      transactionId = await processPayment(order._id.toString(), totalAmount);
+      transactionId = await processPayment(order._id.toString(), finalAmount);
       order.transactionId = transactionId;
       await order.save();
+    }
+
+    // Award points after successful order creation (only if order amount > 0)
+    if (pointsEarned > 0) {
+      try {
+        // Get or create loyalty points record
+        let loyaltyPoints = await LoyaltyPoints.findOne({ userId: req.user._id });
+        if (!loyaltyPoints) {
+          loyaltyPoints = await LoyaltyPoints.create({
+            userId: req.user._id,
+            totalPoints: 0,
+            lifetimePoints: 0
+          });
+        }
+
+        // Add points
+        const newBalance = await loyaltyPoints.addPoints(pointsEarned, `Order #${order._id}`);
+
+        // Create transaction record
+        await PointTransaction.create({
+          userId: req.user._id,
+          points: pointsEarned,
+          type: 'earned',
+          reason: `Earned from order #${order._id}`,
+          referenceId: order._id,
+          referenceType: 'order',
+          balanceAfter: newBalance
+        });
+      } catch (pointsError) {
+        console.error('Error awarding points:', pointsError);
+        // Don't fail the order if points awarding fails
+      }
     }
 
     // Populate order with items
@@ -199,9 +282,11 @@ router.post('/', [
 
     res.status(201).json({
       success: true,
+      message: 'Order created successfully',
       data: {
         ...order.toObject(),
-        items: populatedItems
+        items: populatedItems,
+        pointsEarned: pointsEarned > 0 ? pointsEarned : undefined
       }
     });
   } catch (error) {

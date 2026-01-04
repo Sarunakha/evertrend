@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { FiShoppingCart, FiHeart, FiUser, FiMessageSquare } from 'react-icons/fi';
 import VirtualTryOn from '../components/VirtualTryOn';
+import ReviewList from '../components/ReviewList';
+import WriteReviewForm from '../components/WriteReviewForm';
 import api from '../utils/api';
 
 const ProductDetail = () => {
@@ -18,6 +20,7 @@ const ProductDetail = () => {
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState('');
   const [addingToCart, setAddingToCart] = useState(false);
+  const [showReviewForm, setShowReviewForm] = useState(false);
 
   useEffect(() => {
     fetchProduct();
@@ -290,9 +293,37 @@ const ProductDetail = () => {
       )}
 
       {/* Reviews Section */}
-      {/* <div className="mt-12">
-        <ReviewSection productId={id} />
-      </div> */}
+      <div className="mt-12">
+        {showReviewForm ? (
+          <WriteReviewForm
+            productId={id}
+            onReviewSubmitted={(newReview) => {
+              setShowReviewForm(false);
+              // Optionally refresh the page or update state
+              window.location.reload();
+            }}
+            onCancel={() => setShowReviewForm(false)}
+          />
+        ) : (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-gray-900"></h2>
+              {user && (
+                <button
+                  onClick={() => setShowReviewForm(true)}
+                  className="px-4 py-2 text-white rounded-md font-semibold transition"
+                  style={{ backgroundColor: '#fab242' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d19c49'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fab242'}
+                >
+                  Write a Review
+                </button>
+              )}
+            </div>
+            <ReviewList productId={id} />
+          </>
+        )}
+      </div>
     </div>
   );
 };

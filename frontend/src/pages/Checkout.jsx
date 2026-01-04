@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import EsewaPayment from '../components/EsewaPayment';
-import { FiArrowLeft, FiMapPin, FiCreditCard } from 'react-icons/fi';
+import { FiArrowLeft, FiMapPin, FiCreditCard, FiTag, FiX } from 'react-icons/fi';
 import api from '../utils/api';
 
 const Checkout = () => {
@@ -13,6 +13,10 @@ const Checkout = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('eSewa');
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState('');
   const [shippingAddress, setShippingAddress] = useState({
     street: '',
     city: '',
@@ -41,6 +45,42 @@ const Checkout = () => {
     }));
   };
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+
+    try {
+      setValidatingCoupon(true);
+      setCouponError('');
+      const total = getCartTotal();
+
+      const response = await api.post('/coupons/validate', {
+        code: couponCode.trim().toUpperCase(),
+        orderAmount: total
+      });
+
+      if (response.data.success) {
+        setAppliedCoupon(response.data.data);
+        setCouponCode('');
+      } else {
+        setCouponError(response.data.message || 'Invalid coupon code');
+      }
+    } catch (error) {
+      console.error('Coupon validation error:', error);
+      setCouponError(error.response?.data?.message || 'Failed to validate coupon. Please try again.');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setCouponError('');
+  };
+
 
   const handleCashOnDelivery = async () => {
     if (!cart || !cart.items || cart.items.length === 0) {
@@ -60,13 +100,14 @@ const Checkout = () => {
       const response = await api.post('/orders', {
         items: orderItems,
         paymentMethod: 'Cash on Delivery',
-        shippingAddress: shippingAddress
+        shippingAddress: shippingAddress,
+        couponCode: appliedCoupon?.coupon?.code || null
       });
 
       if (response.data.success) {
         // Clear cart and redirect to success page
         await fetchCart();
-        navigate('/checkout/success', { 
+        navigate('/payment/success', { 
           state: { order: response.data.data } 
         });
       } else {
@@ -101,7 +142,9 @@ const Checkout = () => {
   }
 
   const cartItems = cart.items || [];
-  const total = getCartTotal();
+  const subtotal = getCartTotal();
+  const discount = appliedCoupon?.discount || 0;
+  const total = subtotal - discount;
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -206,6 +249,69 @@ const Checkout = () => {
               </div>
             </div>
 
+            {/* Coupon Code */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+                <FiTag className="mr-2" />
+                Coupon Code
+              </h2>
+              {appliedCoupon ? (
+                <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-green-800">
+                        Coupon Applied: {appliedCoupon.coupon.code}
+                      </p>
+                      <p className="text-sm text-green-600">
+                        You saved Rs.{discount.toFixed(2)}!
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleRemoveCoupon}
+                      className="text-green-600 hover:text-green-800"
+                      title="Remove coupon"
+                    >
+                      <FiX className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => {
+                        setCouponCode(e.target.value.toUpperCase());
+                        setCouponError('');
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyCoupon();
+                        }
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-transparent uppercase"
+                      placeholder="Enter coupon code"
+                    />
+                    <button
+                      onClick={handleApplyCoupon}
+                      disabled={validatingCoupon || !couponCode.trim()}
+                      className="px-6 py-2 text-white rounded-md font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: '#fab242' }}
+                      onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#d19c49')}
+                      onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#fab242')}
+                    >
+                      {validatingCoupon ? 'Applying...' : 'Apply'}
+                    </button>
+                  </div>
+                  {couponError && (
+                    <p className="text-sm text-red-600">{couponError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Payment Method */}
             <div className="bg-white rounded-lg shadow-md p-6">
               <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
@@ -265,10 +371,22 @@ const Checkout = () => {
                     </div>
                   );
                 })}
-                <div className="border-t border-gray-200 pt-4">
-                  <div className="flex justify-between text-lg font-semibold text-gray-900">
-                    <span>Total</span>
-                    <span>Rs.{total.toFixed(2)}</span>
+                <div className="border-t border-gray-200 pt-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Subtotal</span>
+                    <span className="text-gray-900">Rs.{subtotal.toFixed(2)}</span>
+                  </div>
+                  {discount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-600">Discount</span>
+                      <span className="text-green-600 font-semibold">-Rs.{discount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 pt-2">
+                    <div className="flex justify-between text-lg font-semibold text-gray-900">
+                      <span>Total</span>
+                      <span>Rs.{total.toFixed(2)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -282,6 +400,7 @@ const Checkout = () => {
                     _id: item._id
                   }))}
                   shippingAddress={shippingAddress}
+                  couponCode={appliedCoupon?.coupon?.code || null}
                   onError={setError}
                   onLoading={setLoading}
                 />

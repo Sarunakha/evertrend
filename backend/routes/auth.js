@@ -1,14 +1,261 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import User from '../models/User.js';
+import OTP from '../models/OTP.js';
 import { generateToken } from '../utils/generateToken.js';
 import { protect } from '../middleware/auth.js';
-import { sendEmail } from '../utils/sendEmail.js';
+import { sendEmail, sendOTP } from '../utils/sendEmail.js';
 import { validateEmail } from '../utils/emailValidator.js';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
 
 const router = express.Router();
+
+// @route   POST /api/auth/request-otp
+// @desc    Request OTP for email verification before registration
+// @access  Public
+router.post('/request-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Step 1: Basic regex validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address.'
+      });
+    }
+
+    // Normalize email (lowercase, trim)
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Step 2: Deep email validation - Check MX records, disposable emails, etc.
+    console.log(`\n🔍 Validating email for OTP: ${normalizedEmail}`);
+    let emailValidation;
+    try {
+      emailValidation = await validateEmail(normalizedEmail, { 
+        checkMx: true,  // Enable MX check to ensure real email addresses
+        checkDisposable: true,
+        timeoutMs: 5000  // 5 second timeout for DNS lookups
+      });
+      console.log(`📧 Email validation result:`, emailValidation);
+    } catch (validationError) {
+      // If validation throws an error, treat it as invalid
+      console.error('❌ Email validation error:', validationError);
+      return res.status(400).json({
+        success: false,
+        message: 'Email validation failed. Please use a valid, real email address.'
+      });
+    }
+    
+    // Strict check: if validation result is missing or invalid, reject
+    if (!emailValidation || !emailValidation.valid) {
+      console.log(`❌ Email validation failed for: ${normalizedEmail} - ${emailValidation?.error || 'Unknown error'}`);
+      return res.status(400).json({
+        success: false,
+        message: emailValidation?.error || 'Invalid email address. Please use a real email address with a valid domain.'
+      });
+    }
+    
+    console.log(`✅ Email validation passed for: ${normalizedEmail}`);
+
+    // Step 3: Check if user already exists
+    const userExists = await User.findOne({ email: normalizedEmail });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already registered.'
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Delete any existing OTPs for this email
+    await OTP.deleteMany({ email: normalizedEmail });
+
+    // Save OTP to database (will auto-expire after 5 minutes via TTL)
+    await OTP.create({
+      email: normalizedEmail,
+      otp
+    });
+
+    // Send OTP email using nodemailer
+    try {
+      await sendOTP(normalizedEmail, otp);
+      console.log(`✅ OTP sent successfully to: ${normalizedEmail}`);
+      console.log(`🔑 OTP: ${otp} (for development/testing)`);
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Verification code sent to your email. Please check your inbox.',
+        // Include OTP in development mode for testing
+        ...(process.env.NODE_ENV === 'development' && { otp })
+      });
+    } catch (emailError) {
+      console.error('❌ Error sending OTP email:', emailError);
+      
+      // Delete the OTP if email sending fails
+      await OTP.deleteMany({ email: normalizedEmail });
+      
+      // Return specific error message as requested
+      return res.status(500).json({
+        success: false,
+        message: 'Could not send email. Please check if the email address is valid.'
+      });
+    }
+  } catch (error) {
+    console.error('Request OTP error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred while sending the verification code. Please try again.'
+    });
+  }
+});
+
+// @route   POST /api/auth/verify-and-signup
+// @desc    Verify OTP and create user account (only if OTP is valid)
+// @access  Public
+router.post('/verify-and-signup', async (req, res) => {
+  try {
+    const { name, email, password, otp } = req.body;
+
+    // Validate required fields
+    if (!name || name.trim().length < 3 || name.trim().length > 30) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name must be between 3 and 30 characters.'
+      });
+    }
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address.'
+      });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters.'
+      });
+    }
+
+    if (!otp || otp.length !== 6 || !/^\d{6}$/.test(otp)) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP must be exactly 6 digits.'
+      });
+    }
+
+    // Normalize email
+    const normalizedEmail = email.trim().toLowerCase();
+    const username = name.trim();
+
+    // Check if user already exists (double-check)
+    const userExists = await User.findOne({ 
+      $or: [
+        { email: normalizedEmail }, 
+        { username: username }
+      ] 
+    });
+    if (userExists) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists with this email or username.'
+      });
+    }
+
+    // Find the OTP record for this email
+    const otpRecord = await OTP.findOne({ email: normalizedEmail })
+      .sort({ createdAt: -1 }); // Get the most recent OTP
+
+    // Verify OTP exists and matches
+    if (!otpRecord || otpRecord.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code.'
+      });
+    }
+
+    // Check if OTP is expired (though TTL should handle this, we check anyway)
+    const now = new Date();
+    const otpAge = (now - otpRecord.createdAt) / 1000; // Age in seconds
+    if (otpAge > 300) { // 5 minutes
+      await OTP.deleteMany({ email: normalizedEmail });
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired verification code.'
+      });
+    }
+
+    // OTP is valid - NOW create the user
+    // Password will be hashed automatically by the User model's pre-save hook
+    const user = await User.create({
+      username: username,
+      email: normalizedEmail,
+      password: password,
+      role: 'Buyer', // Default role
+      isVerified: true // Mark as verified since they verified via OTP
+    });
+
+    // Delete the used OTP
+    await OTP.deleteMany({ email: normalizedEmail });
+
+    console.log(`✅ User registered successfully: ${user.email}`);
+
+    // Generate JWT token
+    const token = generateToken(user._id);
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful! Your account has been created.',
+      data: {
+        _id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        isVerified: user.isVerified,
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Verify and signup error:', error);
+    
+    // Handle specific error types
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: Object.values(error.errors).map(e => e.message).join(', ')
+      });
+    }
+    
+    if (error.code === 11000) {
+      // Duplicate key error (MongoDB)
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists.`
+      });
+    }
+    
+    // Database connection errors
+    if (error.name === 'MongoServerError' || error.name === 'MongoNetworkError') {
+      return res.status(500).json({
+        success: false,
+        message: 'Database connection error. Please try again later.'
+      });
+    }
+    
+    // Generic error
+    res.status(500).json({
+      success: false,
+      message: error.message || 'An error occurred during registration. Please try again.'
+    });
+  }
+});
 
 // @route   POST /api/auth/register
 // @desc    Register a new user

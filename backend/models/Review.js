@@ -24,6 +24,11 @@ const reviewSchema = new mongoose.Schema({
     trim: true,
     maxlength: [1000, 'Comment cannot exceed 1000 characters']
   },
+  verifiedPurchase: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   reviewDate: {
     type: Date,
     default: Date.now

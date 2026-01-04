@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { FiCheckCircle, FiArrowLeft } from 'react-icons/fi';
+import { useNavigate, useSearchParams, Link, useLocation } from 'react-router-dom';
+import { FiCheckCircle, FiArrowLeft, FiStar } from 'react-icons/fi';
 
 const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [paymentData, setPaymentData] = useState(null);
+  const [orderData, setOrderData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Get order data from location state (if redirected from checkout)
+    if (location.state?.order) {
+      setOrderData(location.state.order);
+    }
+
     // Get the data parameter from URL
     const dataParam = searchParams.get('data');
     
@@ -31,7 +38,7 @@ const PaymentSuccess = () => {
     }
     
     setLoading(false);
-  }, [searchParams]);
+  }, [searchParams, location]);
 
   if (loading) {
     return (
@@ -56,29 +63,70 @@ const PaymentSuccess = () => {
           Thank you for your purchase. Your order has been confirmed and will be processed shortly.
         </p>
 
-        {paymentData && (
+        {/* Points Earned Banner */}
+        {orderData?.pointsEarned && orderData.pointsEarned > 0 && (
+          <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-lg p-6 mb-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-orange-100 text-sm mb-1">You Earned</p>
+                <h3 className="text-3xl font-bold flex items-center">
+                  <FiStar className="mr-2" />
+                  {orderData.pointsEarned} TrendPoints!
+                </h3>
+                <p className="text-orange-100 text-sm mt-2">
+                  Points have been added to your account
+                </p>
+              </div>
+              <Link
+                to="/dashboard/buyer/points"
+                className="px-4 py-2 bg-white text-orange-600 rounded-md font-semibold hover:bg-orange-50 transition text-sm"
+              >
+                View Points
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Transaction Details */}
+        {(paymentData || orderData) && (
           <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
-            <h3 className="font-semibold text-gray-900 mb-3">Transaction Details:</h3>
+            <h3 className="font-semibold text-gray-900 mb-3">Order Details:</h3>
             <div className="space-y-2 text-sm">
-              {paymentData.transaction_uuid && (
+              {orderData?._id && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Order ID:</span>
+                  <span className="font-medium text-gray-900">{orderData._id}</span>
+                </div>
+              )}
+              {paymentData?.transaction_uuid && (
                 <div className="flex justify-between">
                   <span className="text-gray-600">Transaction ID:</span>
                   <span className="font-medium text-gray-900">{paymentData.transaction_uuid}</span>
                 </div>
               )}
-              {paymentData.total_amount && (
+              {(orderData?.totalAmount || paymentData?.total_amount) && (
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Amount:</span>
-                  <span className="font-medium text-gray-900">Rs. {paymentData.total_amount}</span>
+                  <span className="text-gray-600">Amount Paid:</span>
+                  <span className="font-medium text-gray-900">
+                    Rs. {orderData?.totalAmount || paymentData?.total_amount}
+                  </span>
                 </div>
               )}
-              {paymentData.product_code && (
+              {orderData?.couponDiscount > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Product Code:</span>
-                  <span className="font-medium text-gray-900">{paymentData.product_code}</span>
+                  <span className="text-green-600">Discount Applied:</span>
+                  <span className="font-medium text-green-600">
+                    -Rs. {orderData.couponDiscount.toFixed(2)}
+                  </span>
                 </div>
               )}
-              {paymentData.status && (
+              {orderData?.couponCode && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Coupon Used:</span>
+                  <span className="font-medium text-gray-900">{orderData.couponCode}</span>
+                </div>
+              )}
+              {paymentData?.status && (
                 <div className="flex justify-between">
                   <span className="text-gray-600">Status:</span>
                   <span className="font-medium text-green-600">{paymentData.status}</span>

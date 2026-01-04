@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import api from '../utils/api';
 
-const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, onLoading }) => {
+const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode = null, onError, onLoading }) => {
   const [loading, setLoading] = useState(false);
 
   const handleEsewaPayment = async () => {
@@ -18,7 +18,8 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, on
       const orderResponse = await api.post('/orders', {
         items: orderItems,
         paymentMethod: 'eSewa',
-        shippingAddress: shippingAddress
+        shippingAddress: shippingAddress,
+        couponCode: couponCode
       });
 
       if (!orderResponse.data.success) {

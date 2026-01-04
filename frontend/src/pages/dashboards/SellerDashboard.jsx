@@ -5,7 +5,8 @@ import Products from './seller/Products';
 import Stats from './seller/Stats';
 import Orders from './seller/Orders';
 import Profile from './seller/Profile';
-import { FiPackage, FiBarChart2, FiShoppingBag, FiUser } from 'react-icons/fi';
+import Coupons from './seller/Coupons';
+import { FiPackage, FiBarChart2, FiShoppingBag, FiUser, FiTag } from 'react-icons/fi';
 
 const SellerDashboard = () => {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ const SellerDashboard = () => {
     { name: 'My Products', href: '/dashboard/seller/products', icon: FiShoppingBag },
     { name: 'Statistics', href: '/dashboard/seller/stats', icon: FiBarChart2 },
     { name: 'Orders', href: '/dashboard/seller/orders', icon: FiPackage },
+    { name: 'Coupons', href: '/dashboard/seller/coupons', icon: FiTag },
     { name: 'Profile', href: '/dashboard/seller/profile', icon: FiUser },
   ];
 
@@ -61,6 +63,7 @@ const SellerDashboard = () => {
               <Route path="products" element={<Products />} />
               <Route path="stats" element={<Stats />} />
               <Route path="orders" element={<Orders />} />
+              <Route path="coupons" element={<Coupons />} />
               <Route path="profile" element={<Profile />} />
               <Route path="" element={<Products />} />
             </Routes>

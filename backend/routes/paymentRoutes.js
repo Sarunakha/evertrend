@@ -66,7 +66,7 @@ router.post('/esewa', [
 
     // 6. Configurable Success/Failure URLs
     // Ensure these point to your frontend routes
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'; // Adjust port if needed
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002'; // Adjust port if needed
     const success_url = `${frontendUrl}/payment/success`;
     const failure_url = `${frontendUrl}/payment/failure`;
 

@@ -146,6 +146,81 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const sendOTP = async (email) => {
+    try {
+      const response = await api.post('/auth/request-otp', { email });
+      return {
+        success: true,
+        message: response.data.message || 'Verification code sent to your email.',
+        otp: response.data.otp // Only in development mode
+      };
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      
+      if (!error.response) {
+        return {
+          success: false,
+          message: 'Network error. Please check if the server is running and try again.'
+        };
+      }
+      
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to send verification code. Please try again.';
+      return {
+        success: false,
+        message: errorMessage
+      };
+    }
+  };
+
+  const registerVerified = async (formData) => {
+    try {
+      const response = await api.post('/auth/verify-and-signup', formData);
+      const { data } = response.data;
+      
+      // Store token and set user
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        setUser({
+          _id: data._id,
+          username: data.username,
+          email: data.email,
+          role: data.role,
+          isVerified: data.isVerified
+        });
+      }
+      
+      return {
+        success: true,
+        message: response.data.message || 'Registration successful!',
+        user: data
+      };
+    } catch (error) {
+      console.error('Registration error:', error);
+      
+      if (!error.response) {
+        return {
+          success: false,
+          message: 'Network error. Please check if the server is running and try again.'
+        };
+      }
+      
+      // Handle validation errors
+      if (error.response.status === 400 && error.response.data?.errors && Array.isArray(error.response.data.errors)) {
+        const errorMessages = error.response.data.errors.map(err => err.msg || err.message || (err.param ? `${err.param}: ${err.msg}` : 'Validation error')).join(', ');
+        return {
+          success: false,
+          message: errorMessages || 'Validation failed. Please check your input.'
+        };
+      }
+      
+      const errorMessage = error.response?.data?.message || error.message || 'Registration failed. Please try again.';
+      return {
+        success: false,
+        message: errorMessage
+      };
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
@@ -156,6 +231,8 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     register,
+    sendOTP,
+    registerVerified,
     loginWithGoogle,
     logout,
     fetchUser

@@ -4,7 +4,8 @@ import Users from './admin/Users';
 import Products from './admin/Products';
 import Orders from './admin/Orders';
 import Analytics from './admin/Analytics';
-import { FiUsers, FiPackage, FiShoppingBag, FiBarChart2 } from 'react-icons/fi';
+import Coupons from './seller/Coupons';
+import { FiUsers, FiPackage, FiShoppingBag, FiBarChart2, FiTag } from 'react-icons/fi';
 
 const AdminDashboard = () => {
   const location = useLocation();
@@ -14,6 +15,7 @@ const AdminDashboard = () => {
     { name: 'Users', href: '/dashboard/admin/users', icon: FiUsers },
     { name: 'Products', href: '/dashboard/admin/products', icon: FiShoppingBag },
     { name: 'Orders', href: '/dashboard/admin/orders', icon: FiPackage },
+    { name: 'Coupons', href: '/dashboard/admin/coupons', icon: FiTag },
   ];
 
   return (
@@ -60,6 +62,7 @@ const AdminDashboard = () => {
               <Route path="users" element={<Users />} />
               <Route path="products" element={<Products />} />
               <Route path="orders" element={<Orders />} />
+              <Route path="coupons" element={<Coupons />} />
             </Routes>
           </div>
         </div>

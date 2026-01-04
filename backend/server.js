@@ -15,6 +15,8 @@ import cartRoutes from './routes/cart.js';
 import conversationRoutes from './routes/conversations.js';
 import messageRoutes from './routes/messages.js';
 import paymentRoutes from './routes/paymentRoutes.js';
+import loyaltyRoutes from './routes/loyalty.js';
+import couponRoutes from './routes/coupons.js';
 
 // Load environment variables
 dotenv.config();
@@ -52,6 +54,8 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/coupons', couponRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

@@ -38,6 +38,26 @@ const orderSchema = new mongoose.Schema({
     state: String,
     zipCode: String,
     country: String
+  },
+  // Loyalty & Coupons
+  couponCode: {
+    type: String,
+    default: null
+  },
+  couponDiscount: {
+    type: Number,
+    default: 0,
+    min: [0, 'Coupon discount cannot be negative']
+  },
+  pointsEarned: {
+    type: Number,
+    default: 0,
+    min: [0, 'Points earned cannot be negative']
+  },
+  pointsRedeemed: {
+    type: Number,
+    default: 0,
+    min: [0, 'Points redeemed cannot be negative']
   }
 }, {
   timestamps: true
