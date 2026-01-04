@@ -45,6 +45,9 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, on
         throw new Error('Invalid payment form data received from server');
       }
 
+      // Trim the form URL to remove any whitespace
+      const trimmedFormUrl = formUrl.trim();
+
       // Verify required fields are present
       const requiredFields = ['total_amount', 'transaction_uuid', 'product_code', 'signature', 'signed_field_names'];
       const missingFields = requiredFields.filter(field => !formData[field]);
@@ -54,7 +57,7 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, on
 
       // Debug: Log form data (remove signature for security)
       console.log('Submitting eSewa form:', {
-        formUrl,
+        formUrl: trimmedFormUrl,
         formDataKeys: Object.keys(formData),
         formData: { ...formData, signature: '[HIDDEN]' },
         signatureLength: formData.signature?.length
@@ -63,7 +66,7 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, on
       // Create a hidden form
       const form = document.createElement('form');
       form.method = 'POST';
-      form.action = formUrl;
+      form.action = trimmedFormUrl;
       form.target = '_self'; // Submit in same window
       form.style.display = 'none';
       form.setAttribute('accept-charset', 'UTF-8');
@@ -90,8 +93,16 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, on
           const input = document.createElement('input');
           input.type = 'hidden';
           input.name = key;
-          // Ensure value is a string and trim any whitespace
-          input.value = String(formData[key]).trim();
+          // Ensure value is a string - DO NOT trim signed fields as signature was generated with exact values
+          // Only trim non-signed fields to be safe
+          const signedFields = ['total_amount', 'transaction_uuid', 'product_code', 'signature'];
+          if (signedFields.includes(key)) {
+            // For signed fields, use exact value (no trimming) to match signature
+            input.value = String(formData[key]);
+          } else {
+            // For other fields, trim is safe
+            input.value = String(formData[key]).trim();
+          }
           form.appendChild(input);
           
           // Debug: Log each field being added
@@ -106,11 +117,11 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, on
         throw new Error('Form has no fields to submit');
       }
 
-      console.log(`Form created with ${form.children.length} fields, submitting to: ${formUrl}`);
+      console.log(`Form created with ${form.children.length} fields, submitting to: ${trimmedFormUrl}`);
       
       // Verify form action is set correctly
-      if (!form.action || form.action !== formUrl) {
-        throw new Error(`Form action mismatch: expected ${formUrl}, got ${form.action}`);
+      if (!form.action || form.action !== trimmedFormUrl) {
+        throw new Error(`Form action mismatch: expected ${trimmedFormUrl}, got ${form.action}`);
       }
 
       // Append form to body
@@ -149,6 +160,7 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, onError, on
 
   return (
     <button
+    type="button"
       onClick={handleEsewaPayment}
       disabled={loading || !amount || amount <= 0}
       className="w-full px-6 py-3 bg-green-600 text-white rounded-md font-semibold transition hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"

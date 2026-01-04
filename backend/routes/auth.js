@@ -31,13 +31,35 @@ router.post('/register', [
     const { username, email, password, role } = req.body;
 
     // Deep email validation before creating user
-    const emailValidation = validateEmail(email);
-    if (!emailValidation.valid) {
+    // Validate that email is real and has valid mail servers
+    console.log(`\n🔍 Validating email: ${email}`);
+    let emailValidation;
+    try {
+      emailValidation = await validateEmail(email, { 
+        checkMx: true,  // Enable MX check to ensure real email addresses
+        checkDisposable: true,
+        timeoutMs: 5000  // 5 second timeout for DNS lookups
+      });
+      console.log(`📧 Email validation result:`, emailValidation);
+    } catch (validationError) {
+      // If validation throws an error, treat it as invalid
+      console.error('❌ Email validation error:', validationError);
       return res.status(400).json({
         success: false,
-        message: emailValidation.error || 'Invalid email address'
+        message: 'Email validation failed. Please use a valid, real email address.'
       });
     }
+    
+    // Strict check: if validation result is missing or invalid, reject
+    if (!emailValidation || !emailValidation.valid) {
+      console.log(`❌ Email validation failed for: ${email} - ${emailValidation?.error || 'Unknown error'}`);
+      return res.status(400).json({
+        success: false,
+        message: emailValidation?.error || 'Invalid email address. Please use a real email address with a valid domain.'
+      });
+    }
+    
+    console.log(`✅ Email validation passed for: ${email}`);
 
     // Check if user already exists
     const userExists = await User.findOne({ $or: [{ email }, { username }] });

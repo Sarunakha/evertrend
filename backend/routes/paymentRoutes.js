@@ -6,6 +6,7 @@ import { protect } from '../middleware/auth.js';
 const router = express.Router();
 
 // eSewa Test Environment Credentials
+// In a real app, these should be in process.env
 const ESEWA_PRODUCT_CODE = 'EPAYTEST';
 const ESEWA_SECRET_KEY = '8gBm/:&EnhH.1/q';
 const ESEWA_FORM_URL = 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
@@ -27,103 +28,65 @@ router.post('/esewa', [
       });
     }
 
-    const { amount, products = [] } = req.body;
+    const { amount } = req.body;
 
-    // Generate unique transaction UUID (must be unique per transaction)
-    // eSewa accepts alphanumeric characters, hyphens, and underscores
-    // Format: Keep it simple - alphanumeric only, max 40 characters
+    // 1. Generate unique transaction UUID
     const timestamp = Date.now();
     const randomStr = crypto.randomBytes(4).toString('hex').toUpperCase();
     const transaction_uuid = `TXN${timestamp}${randomStr}`;
 
-    // Calculate amounts - ensure all are strings with exactly 2 decimal places
-    // Important: Use toFixed(2) to ensure exactly 2 decimal places
-    const total_amount = parseFloat(amount).toFixed(2);
-    const tax_amount = '0.00';
+    // 2. Define Charges & Tax
+    // eSewa requires strict decimal formatting (usually 2 decimal places)
+    const tax_amount = '0.00';  // Set to 0 for simplicity, or calculate based on logic
     const product_service_charge = '0.00';
     const product_delivery_charge = '0.00';
-    
-    // Validate amounts are valid numbers
-    if (isNaN(parseFloat(total_amount)) || parseFloat(total_amount) <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid amount provided'
-      });
-    }
 
-    // Success and failure URLs (configurable via environment variable)
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
+    // 3. Calculate Total Amount
+    // The total amount sent to eSewa MUST be the sum of (amount + tax + charges)
+    const baseAmount = parseFloat(amount);
+    const taxAmount = parseFloat(tax_amount);
+    const serviceCharge = parseFloat(product_service_charge);
+    const deliveryCharge = parseFloat(product_delivery_charge);
+    
+    // total_amount = 100 + 0 + 0 + 0 = 100.00
+    const total_amount = (baseAmount + taxAmount + serviceCharge + deliveryCharge).toFixed(2);
+
+    // 4. Convert all fields to strings for Signature Generation
+    const totalAmountStr = String(total_amount);
+    const transactionUuidStr = String(transaction_uuid);
+    const productCodeStr = String(ESEWA_PRODUCT_CODE);
+
+    // 5. Generate Signature
+    // Format: total_amount,transaction_uuid,product_code
+    const signatureString = `${totalAmountStr},${transactionUuidStr},${productCodeStr}`;
+
+    const hmac = crypto.createHmac('sha256', ESEWA_SECRET_KEY);
+    hmac.update(signatureString, 'utf8');
+    const signature = hmac.digest('base64');
+
+    // 6. Configurable Success/Failure URLs
+    // Ensure these point to your frontend routes
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'; // Adjust port if needed
     const success_url = `${frontendUrl}/payment/success`;
     const failure_url = `${frontendUrl}/payment/failure`;
 
-    // Signed field names - order matters for signature generation
-    // eSewa v2 requires: total_amount,transaction_uuid,product_code
-    const signed_field_names = 'total_amount,transaction_uuid,product_code';
-
-    // Create signature string in the EXACT order of signed_field_names
-    // Format: value1,value2,value3 (comma-separated, no spaces, no trailing commas)
-    // Values must match exactly what's sent in the form
-    // Order: total_amount,transaction_uuid,product_code
-    // CRITICAL: No spaces, no extra characters, exact match with form values
-    const signatureString = `${total_amount},${transaction_uuid},${ESEWA_PRODUCT_CODE}`.trim();
-
-    // Generate HMAC-SHA256 signature
-    // Important: 
-    // 1. Use the secret key exactly as provided (no encoding)
-    // 2. The signature string must be in the exact order of signed_field_names
-    // 3. All values must be strings with no extra whitespace
-    // 4. Update with UTF-8 encoding
-    // 5. Digest as base64
-    const hmac = crypto.createHmac('sha256', ESEWA_SECRET_KEY);
-    hmac.update(signatureString);
-    const signature = hmac.digest('base64');
-    
-    // Verify signature generation
-    if (!signature || signature.length === 0) {
-      throw new Error('Failed to generate signature');
-    }
-    
-    // Additional validation
-    if (signature.includes(' ') || signature.includes('\n') || signature.includes('\r')) {
-      throw new Error('Signature contains invalid characters');
-    }
-
-    // Prepare form data - ensure all values are strings
+    // 7. Prepare Form Data
+    // CRITICAL: 'amount' field in form is the PRODUCT PRICE, not the total.
+    // 'total_amount' is the SUM.
+    // Since tax is 0, they happen to be equal here, but logically they are different fields.
     const formData = {
-      amount: total_amount,
-      tax_amount: tax_amount,
-      total_amount: total_amount,
-      transaction_uuid: transaction_uuid,
-      product_code: ESEWA_PRODUCT_CODE,
-      product_service_charge: product_service_charge,
-      product_delivery_charge: product_delivery_charge,
-      success_url: success_url,
+      amount: baseAmount.toFixed(2), // Product Price
       failure_url: failure_url,
-      signed_field_names: signed_field_names,
-      signature: signature
-    };
-
-    // Debug logging (remove in production)
-    console.log('eSewa Payment Data:', {
-      signatureString: `"${signatureString}"`,
-      signatureStringLength: signatureString.length,
-      signature: signature.substring(0, 20) + '...',
-      signatureLength: signature.length,
-      transaction_uuid,
-      total_amount,
+      product_delivery_charge: product_delivery_charge,
+      product_service_charge: product_service_charge,
       product_code: ESEWA_PRODUCT_CODE,
-      formDataKeys: Object.keys(formData),
-      formData: { 
-        ...formData, 
-        signature: '[HIDDEN]',
-        signatureLength: signature.length
-      }
-    });
-    
-    // Validate all required fields are present and valid
-    if (!total_amount || !transaction_uuid || !ESEWA_PRODUCT_CODE || !signature) {
-      throw new Error('Missing required payment fields');
-    }
+      signature: signature,
+      signed_field_names: 'total_amount,transaction_uuid,product_code',
+      success_url: success_url,
+      tax_amount: tax_amount,
+      total_amount: totalAmountStr, // The sum used in signature
+      transaction_uuid: transactionUuidStr
+    };
 
     res.json({
       success: true,
@@ -132,6 +95,7 @@ router.post('/esewa', [
         formData: formData
       }
     });
+
   } catch (error) {
     console.error('eSewa payment generation error:', error);
     res.status(500).json({
@@ -142,4 +106,3 @@ router.post('/esewa', [
 });
 
 export default router;
-
