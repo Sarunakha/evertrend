@@ -14,6 +14,7 @@ const Products = () => {
     search: '',
     category: categoryFromUrl,
     size: '',
+    collection: '', // New: 'new-arrivals', 'thrift-finds', or ''
     condition: '',
     minPrice: '',
     maxPrice: '',
@@ -38,9 +39,28 @@ const Products = () => {
     try {
       const params = new URLSearchParams({
         page: pagination.page,
-        limit: 12,
-        ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v))
+        limit: 12
       });
+
+      // Add filters, handling collection type
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value && key !== 'collection') {
+          params.append(key, value);
+        }
+      });
+
+      // Handle collection filter
+      if (filters.collection === 'new-arrivals') {
+        params.append('condition', 'New');
+      } else if (filters.collection === 'thrift-finds') {
+        // For thrift finds, condition is handled separately if selected
+        if (filters.condition) {
+          params.append('condition', filters.condition);
+        } else {
+          // If no specific condition selected, exclude 'New' to show all thrift items
+          params.append('excludeCondition', 'New');
+        }
+      }
 
       const response = await api.get(`/products?${params}`);
       setProducts(response.data.data);
@@ -53,7 +73,19 @@ const Products = () => {
   };
 
   const handleFilterChange = (e) => {
-    setFilters({ ...filters, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    
+    // If collection changes, reset condition filter
+    if (name === 'collection') {
+      setFilters({ 
+        ...filters, 
+        collection: value,
+        condition: '' // Clear condition when switching collection type
+      });
+    } else {
+      setFilters({ ...filters, [name]: value });
+    }
+    
     setPagination({ ...pagination, page: 1 });
   };
 
@@ -66,7 +98,7 @@ const Products = () => {
 
       {/* Filters */}
       <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${filters.collection === 'thrift-finds' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Search
@@ -154,10 +186,10 @@ const Products = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Condition
+              Collection
             </label>
             <select
-              name="condition"
+              name="collection"
               className="w-full px-3 py-2 border rounded-md transition"
               style={{ borderColor: '#b4b4b4' }}
               onFocus={(e) => {
@@ -168,17 +200,43 @@ const Products = () => {
                 e.currentTarget.style.borderColor = '#b4b4b4';
                 e.currentTarget.style.boxShadow = 'none';
               }}
-              value={filters.condition}
+              value={filters.collection}
               onChange={handleFilterChange}
             >
-              <option value="">All Conditions</option>
-              <option value="New">New</option>
-              <option value="Like New">Like New</option>
-              <option value="Good">Good</option>
-              <option value="Fair">Fair</option>
-              <option value="Poor">Poor</option>
+              <option value="">All Products</option>
+              <option value="new-arrivals">New Arrivals</option>
+              <option value="thrift-finds">Thrift Finds</option>
             </select>
           </div>
+
+          {/* Condition dropdown - only visible when Thrift Finds is selected */}
+          {filters.collection === 'thrift-finds' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Condition
+              </label>
+              <select
+                name="condition"
+                className="w-full px-3 py-2 border rounded-md transition"
+                style={{ borderColor: '#b4b4b4' }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = '#fab242';
+                  e.currentTarget.style.boxShadow = '0 0 0 2px rgba(250, 178, 66, 0.2)';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = '#b4b4b4';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+                value={filters.condition}
+                onChange={handleFilterChange}
+              >
+                <option value="">All Conditions</option>
+                <option value="Good">Good</option>
+                <option value="Fair">Fair</option>
+                <option value="Poor">Poor</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 

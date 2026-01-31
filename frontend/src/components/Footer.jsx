@@ -65,7 +65,6 @@ const Footer = () => {
                 className="h-12 w-auto mx-auto mb-4"
               />
             </Link>
-            <h3 className="text-4xl font-bold mb-6">EVERTREND</h3>
             
             {/* Social Media Icons */}
             <div className="flex justify-center gap-6 mb-8">

@@ -22,9 +22,9 @@ console.log("Expected Signature: ", "YVweM7CgAtZW5tRKica/BIeYFvpSj09AaInsulqNKHk
 console.log("---------------------------------------------------");
 
 if (hash === "YVweM7CgAtZW5tRKica/BIeYFvpSj09AaInsulqNKHk=") {
-    console.log("✅ MATCH! Your backend logic is correct.");
+    console.log(" MATCH! Your backend logic is correct.");
     console.log("Issue is likely with the Secret Key or Environment (Sandbox vs Prod).");
 } else {
-    console.log("❌ MISMATCH! Your backend is generating a different signature.");
+    console.log(" MISMATCH! Your backend is generating a different signature.");
     console.log("Check the order of parameters or the secret key.");
 }

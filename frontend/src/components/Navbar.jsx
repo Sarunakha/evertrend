@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext';
 import { FiShoppingBag, FiShoppingCart, FiUser, FiLogOut, FiChevronDown } from 'react-icons/fi';
 import logo from '../assets/logo1.png';
 import LogoutModal from './LogoutModal';
+import NotificationCenter from './NotificationCenter';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -134,7 +135,7 @@ const Navbar = () => {
                 About
               </Link>
               <Link to="/virtual-try-on" className="text-gray-900 hover:text-primary px-3 py-2 text-sm font-medium transition" style={{ color: '#000000' }}>
-                Virtual Try Out
+                Virtual Try On
               </Link>
               <Link to="/contact" className="text-gray-900 hover:text-primary px-3 py-2 text-sm font-medium transition" style={{ color: '#000000' }}>
                 Contact
@@ -142,6 +143,9 @@ const Navbar = () => {
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {/* Notification Center - Only show if user is logged in */}
+            {user && <NotificationCenter />}
+            
             {/* Cart Button - Rightmost */}
             <Link
               to="/cart"

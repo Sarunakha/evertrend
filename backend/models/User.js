@@ -60,6 +60,11 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isSuspended: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   verificationToken: String,
   verificationTokenExpire: Date,
   verificationOTP: {

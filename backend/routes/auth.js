@@ -529,8 +529,8 @@ router.post('/login', [
       });
     }
 
-    // Check if email is verified
-    if (!user.isVerified) {
+    // Check if email is verified (skip for Admin users)
+    if (!user.isVerified && user.role !== 'Admin') {
       return res.status(403).json({
         success: false,
         message: 'Please verify your email address to continue.',

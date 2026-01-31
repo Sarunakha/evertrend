@@ -69,6 +69,11 @@ const productSchema = new mongoose.Schema({
     default: 0,
     index: true
   },
+  flaggedForReview: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   createdAt: {
     type: Date,
     default: Date.now

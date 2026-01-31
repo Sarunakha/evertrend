@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "cluster": "node cluster.js"
+    "cluster": "node cluster.js",
+    "create-admin": "node scripts/createAdmin.js",
+    "update-admin": "node scripts/updateUserToAdmin.js"
   },
   "keywords": [
     "ecommerce",

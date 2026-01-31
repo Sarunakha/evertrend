@@ -2,6 +2,8 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import Coupon from '../models/Coupon.js';
 import Order from '../models/Order.js';
+import Notification from '../models/Notification.js';
+import User from '../models/User.js';
 import { protect, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -139,6 +141,30 @@ router.post('/', [
 
     // Create coupon
     const coupon = await Coupon.create(couponData);
+
+    // Create notifications for all buyers (or targeted users)
+    try {
+      // Get all buyers to notify them about the new coupon
+      const buyers = await User.find({ role: 'Buyer' }).select('_id');
+      
+      // Create notifications in batches to avoid overwhelming the system
+      const notificationPromises = buyers.map(buyer =>
+        Notification.create({
+          recipientId: buyer._id,
+          senderId: req.user._id,
+          type: 'NEW_COUPON',
+          message: `New coupon available: ${coupon.code}! ${coupon.description || 'Use it on your next purchase'}`,
+          relatedId: coupon._id,
+          isRead: false
+        })
+      );
+
+      // Execute notifications in parallel (but don't fail coupon creation if this fails)
+      await Promise.allSettled(notificationPromises);
+    } catch (notificationError) {
+      console.error('Error creating notifications for new coupon:', notificationError);
+      // Don't fail the coupon creation if notification creation fails
+    }
 
     res.status(201).json({
       success: true,

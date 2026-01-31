@@ -17,6 +17,7 @@ router.get('/', async (req, res) => {
       category,
       size,
       condition,
+      excludeCondition,
       minPrice,
       maxPrice,
       sortBy = 'createdAt',
@@ -34,7 +35,13 @@ router.get('/', async (req, res) => {
     // Filters
     if (category) query.category = category;
     if (size) query.size = size;
-    if (condition) query.condition = condition;
+    if (condition) {
+      query.condition = condition;
+    } else if (excludeCondition) {
+      // Exclude specific condition (e.g., for thrift finds, exclude 'New')
+      // Only apply if condition is not already set
+      query.condition = { $ne: excludeCondition };
+    }
     if (sellerId) query.sellerId = sellerId;
     
     if (minPrice || maxPrice) {

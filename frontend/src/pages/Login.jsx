@@ -68,34 +68,43 @@ const Login = () => {
     setShowSuccessAnimation(false);
     setLoading(true);
 
-    const result = await login(formData.email, formData.password);
-    
-    if (result.success) {
-      setLoading(false);
-      // Wait a bit for user state to update, then show success animation
-      setTimeout(() => {
-        setShowSuccessAnimation(true);
-      }, 100);
-      // Don't navigate immediately - let useEffect handle it after animation
-    } else {
-      setLoading(false);
-      // Check if error is about email verification
-      if (result.requiresVerification) {
-        setRequiresVerification(true);
-        setUnverifiedEmail(result.email || formData.email);
-        setError(result.message || 'Please verify your email address to continue.');
-        // Keep verification error visible longer (5 seconds) as it has action buttons
+    try {
+      const result = await login(formData.email, formData.password);
+      
+      if (result.success) {
+        // Wait a bit for user state to update, then show success animation
         setTimeout(() => {
-          setError('');
-          setRequiresVerification(false);
-        }, 5000);
+          setShowSuccessAnimation(true);
+          setLoading(false);
+        }, 100);
+        // Don't navigate immediately - let useEffect handle it after animation
       } else {
-        setError(result.message);
-        // Show error message for 1.5 seconds, then clear it
-        setTimeout(() => {
-          setError('');
-        }, 2000);
+        setLoading(false);
+        // Check if error is about email verification
+        if (result.requiresVerification) {
+          setRequiresVerification(true);
+          setUnverifiedEmail(result.email || formData.email);
+          setError(result.message || 'Please verify your email address to continue.');
+          // Keep verification error visible longer (5 seconds) as it has action buttons
+          setTimeout(() => {
+            setError('');
+            setRequiresVerification(false);
+          }, 5000);
+        } else {
+          setError(result.message || 'Login failed. Please check your credentials and try again.');
+          // Show error message for 3 seconds, then clear it
+          setTimeout(() => {
+            setError('');
+          }, 3000);
+        }
       }
+    } catch (error) {
+      console.error('Login submission error:', error);
+      setLoading(false);
+      setError('An unexpected error occurred. Please try again.');
+      setTimeout(() => {
+        setError('');
+      }, 3000);
     }
   };
 

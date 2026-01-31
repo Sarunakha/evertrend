@@ -41,18 +41,27 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { data, requiresVerification } = response.data;
       
-      if (requiresVerification) {
+      // Check if response indicates verification is required
+      if (response.data.requiresVerification) {
         return {
           success: false,
           requiresVerification: true,
           email: email,
-          message: 'Please verify your email address to continue.'
+          message: response.data.message || 'Please verify your email address to continue.'
+        };
+      }
+
+      // Check if login was successful
+      if (!response.data.success) {
+        return {
+          success: false,
+          message: response.data.message || 'Login failed. Please try again.'
         };
       }
 
       // Extract token and user data from response
+      const { data } = response.data;
       const token = data?.token;
       const userData = data ? {
         _id: data._id,
@@ -73,8 +82,42 @@ export const AuthProvider = ({ children }) => {
         };
       }
     } catch (error) {
+      console.error('Login error:', error);
+      
+      // Handle network errors
+      if (!error.response) {
+        return {
+          success: false,
+          message: 'Network error. Please check if the server is running and try again.'
+        };
+      }
+
+      // Handle specific error responses
+      const errorData = error.response?.data || {};
+      const errorMessage = errorData.message || 'Login failed. Please check your credentials and try again.';
+      
+      // Check if it's a verification error
+      if (errorData.requiresVerification) {
+        return {
+          success: false,
+          requiresVerification: true,
+          email: email,
+          message: errorMessage
+        };
+      }
+
+      // Handle validation errors
+      if (error.response.status === 400 && errorData.errors && Array.isArray(errorData.errors)) {
+        const errorMessages = errorData.errors.map(err => err.msg || err.message || (err.param ? `${err.param}: ${err.msg}` : 'Validation error')).join(', ');
+        return {
+          success: false,
+          message: errorMessages || 'Validation failed. Please check your input.'
+        };
+      }
+
       return {
         success: false,
+        message: errorMessage
       };
     }
   };

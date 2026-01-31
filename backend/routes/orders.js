@@ -6,7 +6,8 @@ import Product from '../models/Product.js';
 import Coupon from '../models/Coupon.js';
 import LoyaltyPoints from '../models/LoyaltyPoints.js';
 import PointTransaction from '../models/PointTransaction.js';
-import { protect, authorize, checkOwnership } from '../middleware/auth.js';
+import Notification from '../models/Notification.js';
+import { protect, authorize, checkOwnership, adminMiddleware } from '../middleware/auth.js';
 import { processPayment } from '../services/paymentService.js';
 
 // Points earning rate: 1 point per Rs.25
@@ -64,6 +65,53 @@ router.get('/', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message
+    });
+  }
+});
+
+// @route   GET /api/orders/admin/all
+// @desc    Get all orders (Admin only)
+// @access  Private (Admin)
+// NOTE: This route must come BEFORE /:id to avoid route matching conflicts
+router.get('/admin/all', adminMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 50 } = req.query;
+
+    const orders = await Order.find({})
+      .populate('userId', 'username email')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ orderDate: -1 });
+
+    // Get order items for each order
+    const ordersWithItems = await Promise.all(
+      orders.map(async (order) => {
+        const items = await OrderItem.find({ orderId: order._id })
+          .populate('productId', 'name images price sellerId');
+        return {
+          ...order.toObject(),
+          items
+        };
+      })
+    );
+
+    const total = await Order.countDocuments({});
+
+    res.json({
+      success: true,
+      data: ordersWithItems,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get all orders error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching orders'
     });
   }
 });
@@ -312,17 +360,68 @@ router.put('/:id/status', authorize('Seller', 'Admin'), [
       });
     }
 
+    // Get the order with old status before updating
+    const oldOrder = await Order.findById(req.params.id);
+    
+    if (!oldOrder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    const oldStatus = oldOrder.status;
+    const newStatus = req.body.status;
+
+    // Update order status
     const order = await Order.findByIdAndUpdate(
       req.params.id,
-      { status: req.body.status },
+      { status: newStatus },
       { new: true, runValidators: true }
-    );
+    ).populate('userId', '_id');
 
     if (!order) {
       return res.status(404).json({
         success: false,
         message: 'Order not found'
       });
+    }
+
+    // Notification Logic: Notify buyer when seller updates order status
+    const orderIdShort = order._id.toString().slice(-8);
+    
+    // Scenario 1: Seller Ships Order (Pending → Shipped)
+    if (oldStatus === 'Pending' && newStatus === 'Shipped') {
+      try {
+        await Notification.create({
+          recipientId: order.userId._id,
+          senderId: req.user._id,
+          type: 'ORDER_UPDATE',
+          message: `Your order #${orderIdShort} has been shipped and is on its way!`,
+          relatedId: order._id,
+          isRead: false
+        });
+      } catch (notificationError) {
+        console.error('Error creating shipment notification:', notificationError);
+        // Don't fail the order update if notification creation fails
+      }
+    }
+
+    // Scenario 2: Seller Marks Order as Delivered (Shipped → Delivered)
+    if (oldStatus === 'Shipped' && newStatus === 'Delivered') {
+      try {
+        await Notification.create({
+          recipientId: order.userId._id,
+          senderId: req.user._id,
+          type: 'ORDER_UPDATE',
+          message: `Your order #${orderIdShort} has been delivered. Enjoy your purchase!`,
+          relatedId: order._id,
+          isRead: false
+        });
+      } catch (notificationError) {
+        console.error('Error creating delivery notification:', notificationError);
+        // Don't fail the order update if notification creation fails
+      }
     }
 
     res.json({
@@ -333,6 +432,104 @@ router.put('/:id/status', authorize('Seller', 'Admin'), [
     res.status(500).json({
       success: false,
       message: error.message
+    });
+  }
+});
+
+// @route   PUT /api/orders/:id/confirm-delivery
+// @desc    Buyer confirms delivery (marks order as delivered)
+// @access  Private (Buyer only)
+router.put('/:id/confirm-delivery', async (req, res) => {
+  try {
+    // Only buyers can confirm delivery
+    if (req.user.role !== 'Buyer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only buyers can confirm delivery'
+      });
+    }
+
+    const order = await Order.findById(req.params.id).populate('userId', '_id');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Check if order belongs to the buyer
+    if (order.userId._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to confirm delivery for this order'
+      });
+    }
+
+    // Check if order is in Shipped status
+    if (order.status !== 'Shipped') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot confirm delivery. Order status must be 'Shipped'. Current status: ${order.status}`
+      });
+    }
+
+    // Update order status to Delivered
+    order.status = 'Delivered';
+    await order.save();
+
+    // Scenario B: Buyer Confirms Delivery
+    // Notify seller(s) associated with items in the order
+    try {
+      // Get all order items with their products to find sellers
+      const orderItems = await OrderItem.find({ orderId: order._id })
+        .populate('productId', 'sellerId name');
+
+      // Group items by seller to avoid duplicate notifications
+      const sellerMap = new Map();
+
+      orderItems.forEach(item => {
+        if (item.productId && item.productId.sellerId) {
+          const sellerId = item.productId.sellerId.toString();
+          if (!sellerMap.has(sellerId)) {
+            sellerMap.set(sellerId, {
+              sellerId: item.productId.sellerId,
+              items: []
+            });
+          }
+          sellerMap.get(sellerId).items.push(item.productId.name);
+        }
+      });
+
+      // Create notifications for each seller
+      const orderIdShort = order._id.toString().slice(-8);
+      const notificationPromises = Array.from(sellerMap.values()).map(sellerData => {
+        return Notification.create({
+          recipientId: sellerData.sellerId,
+          senderId: req.user._id,
+          type: 'ORDER_UPDATE',
+          message: `Order #${orderIdShort} has been marked as Delivered by the buyer.`,
+          relatedId: order._id,
+          isRead: false
+        });
+      });
+
+      await Promise.allSettled(notificationPromises);
+    } catch (notificationError) {
+      console.error('Error creating delivery confirmation notifications:', notificationError);
+      // Don't fail the order update if notification creation fails
+    }
+
+    res.json({
+      success: true,
+      message: 'Delivery confirmed successfully',
+      data: order
+    });
+  } catch (error) {
+    console.error('Confirm delivery error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error confirming delivery'
     });
   }
 });

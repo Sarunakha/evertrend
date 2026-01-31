@@ -17,6 +17,9 @@ import messageRoutes from './routes/messages.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import loyaltyRoutes from './routes/loyalty.js';
 import couponRoutes from './routes/coupons.js';
+import adminRoutes from './routes/admin.js';
+import refundRoutes from './routes/refundRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 // Load environment variables
 dotenv.config();
@@ -56,6 +59,9 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/refunds', refundRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

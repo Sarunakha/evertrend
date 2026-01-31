@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import Navbar from './components/Navbar';
@@ -23,14 +23,15 @@ import BuyerDashboard from './pages/dashboards/BuyerDashboard';
 import SellerDashboard from './pages/dashboards/SellerDashboard';
 import AdminDashboard from './pages/dashboards/AdminDashboard';
 
-function App() {
+// Component to conditionally render Navbar
+const AppContent = () => {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/dashboard/admin');
+  
   return (
-    <AuthProvider>
-      <CartProvider>
-        <Router>
-        <div className="min-h-screen bg-white">
-          <Navbar />
-          <Routes>
+    <div className="min-h-screen bg-white">
+      {!isAdminRoute && <Navbar />}
+      <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -75,9 +76,18 @@ function App() {
             />
             
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-      </Router>
+      </Routes>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <CartProvider>
+        <Router>
+          <AppContent />
+        </Router>
       </CartProvider>
     </AuthProvider>
   );
