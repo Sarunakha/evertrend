@@ -1,16 +1,32 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link, useLocation } from 'react-router-dom';
 import { FiCheckCircle, FiArrowLeft, FiStar } from 'react-icons/fi';
+import { useCart } from '../context/CartContext';
 
 const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { clearCart } = useCart();
   const [paymentData, setPaymentData] = useState(null);
   const [orderData, setOrderData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Clear cart when payment success page loads
+    // This ensures cart is cleared even if user comes back from eSewa redirect
+    const clearCartOnSuccess = async () => {
+      try {
+        await clearCart();
+        console.log('Cart cleared on payment success page');
+      } catch (error) {
+        console.error('Error clearing cart on success page:', error);
+        // Don't fail the page if cart clearing fails
+      }
+    };
+    
+    clearCartOnSuccess();
+
     // Get order data from location state (if redirected from checkout)
     if (location.state?.order) {
       setOrderData(location.state.order);
@@ -38,7 +54,7 @@ const PaymentSuccess = () => {
     }
     
     setLoading(false);
-  }, [searchParams, location]);
+  }, [searchParams, location, clearCart]);
 
   if (loading) {
     return (

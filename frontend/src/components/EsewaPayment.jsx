@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import api from '../utils/api';
+import { useCart } from '../context/CartContext';
 
 const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode = null, onError, onLoading }) => {
   const [loading, setLoading] = useState(false);
+  const { clearCart } = useCart();
 
   const handleEsewaPayment = async () => {
     try {
@@ -28,6 +30,16 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
 
       const order = orderResponse.data.data;
       const orderAmount = order.totalAmount || amount;
+
+      // Clear cart after successful order creation (before redirecting to eSewa)
+      // The backend also clears the cart, but we do it here for immediate UI update
+      try {
+        await clearCart();
+        console.log('Cart cleared after order creation for eSewa payment');
+      } catch (cartError) {
+        console.error('Error clearing cart:', cartError);
+        // Don't fail payment if cart clearing fails - backend will handle it
+      }
 
       // Call backend to get payment form data
       const response = await api.post('/payment/esewa', {
@@ -72,6 +84,7 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
       form.style.display = 'none';
       form.setAttribute('accept-charset', 'UTF-8');
       form.setAttribute('enctype', 'application/x-www-form-urlencoded');
+      form.setAttribute('id', 'esewa-payment-form');
 
       // Add all form fields - ensure all values are properly formatted strings
       // Important: Add fields in the order eSewa expects
@@ -90,7 +103,8 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
       ];
 
       fieldOrder.forEach((key) => {
-        if (formData[key] !== undefined && formData[key] !== null) {
+        // Only add field if it exists in formData and has a value
+        if (formData[key] !== undefined && formData[key] !== null && formData[key] !== '') {
           const input = document.createElement('input');
           input.type = 'hidden';
           input.name = key;
@@ -110,6 +124,8 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
           if (key !== 'signature') {
             console.log(`Form field ${key}:`, input.value);
           }
+        } else {
+          console.warn(`Skipping field ${key}: value is ${formData[key]}`);
         }
       });
 
@@ -135,8 +151,27 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
       
       // Submit form immediately
       try {
+        // Verify all form fields one more time before submission
+        const formFields = Array.from(form.querySelectorAll('input[type="hidden"]'));
+        console.log(`Submitting form with ${formFields.length} fields:`);
+        formFields.forEach(input => {
+          if (input.name !== 'signature') {
+            console.log(`  ${input.name} = ${input.value}`);
+          } else {
+            console.log(`  ${input.name} = [HIDDEN - Length: ${input.value.length}]`);
+          }
+        });
+        
+        // Submit the form
         form.submit();
-        console.log('Form submitted successfully');
+        console.log('Form submitted successfully to:', trimmedFormUrl);
+        
+        // Note: After this point, user will be redirected to eSewa
+        // If login fails, check:
+        // 1. eSewa ID: 9806800001 (or 9806800002-9806800005)
+        // 2. Password: Nepal@123 (exact, case-sensitive)
+        // 3. reCAPTCHA must be checked
+        // 4. Check browser console for any errors after redirect
       } catch (submitError) {
         console.error('Error submitting form:', submitError);
         // Fallback: try programmatic submission

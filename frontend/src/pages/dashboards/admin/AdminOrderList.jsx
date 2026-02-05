@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FiPackage, FiEye, FiX } from 'react-icons/fi';
+import { FiPackage, FiEye, FiX, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 import api from '../../../utils/api';
 
 const AdminOrderList = () => {
@@ -7,6 +7,8 @@ const AdminOrderList = () => {
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [processingCancellation, setProcessingCancellation] = useState(null);
+  const [adminResponse, setAdminResponse] = useState('');
 
   useEffect(() => {
     fetchOrders();
@@ -35,10 +37,41 @@ const AdminOrderList = () => {
     }
   };
 
+  const handleCancellationAction = async (orderId, action) => {
+    if (action === 'Reject' && !adminResponse.trim()) {
+      alert('Please provide a reason for rejection');
+      return;
+    }
+
+    try {
+      setProcessingCancellation(orderId);
+      await api.put(`/orders/${orderId}/handle-cancellation`, {
+        action,
+        adminResponse: adminResponse.trim() || undefined
+      });
+      alert(`Cancellation request ${action.toLowerCase()}d successfully`);
+      setAdminResponse('');
+      fetchOrders(); // Refresh orders
+      if (selectedOrder && selectedOrder._id === orderId) {
+        setShowDetailsModal(false);
+        setSelectedOrder(null);
+      }
+    } catch (error) {
+      console.error('Error handling cancellation:', error);
+      alert(error.response?.data?.message || 'Error handling cancellation request');
+    } finally {
+      setProcessingCancellation(null);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'Pending':
         return 'bg-yellow-100 text-yellow-800';
+      case 'Processing':
+        return 'bg-purple-100 text-purple-800';
+      case 'Cancellation Requested':
+        return 'bg-orange-100 text-orange-800';
       case 'Shipped':
         return 'bg-blue-100 text-blue-800';
       case 'Delivered':
@@ -116,7 +149,10 @@ const AdminOrderList = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {orders.map((order) => (
-                  <tr key={order._id} className="hover:bg-gray-50">
+                  <tr 
+                    key={order._id} 
+                    className={`hover:bg-gray-50 ${order.status === 'Cancellation Requested' ? 'bg-orange-50' : ''}`}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       #{order._id.toString().slice(-8)}
                     </td>
@@ -140,15 +176,35 @@ const AdminOrderList = () => {
                       >
                         {order.status}
                       </span>
+                      {order.status === 'Cancellation Requested' && (
+                        <div className="mt-1 text-xs text-orange-600 font-medium">
+                          ⚠️ Action Required
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <button
-                        onClick={() => handleViewDetails(order._id)}
-                        className="flex items-center space-x-1 px-3 py-1 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition"
-                      >
-                        <FiEye className="h-4 w-4" />
-                        <span>View Details</span>
-                      </button>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleViewDetails(order._id)}
+                          className="flex items-center space-x-1 px-3 py-1 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition"
+                        >
+                          <FiEye className="h-4 w-4" />
+                          <span>View</span>
+                        </button>
+                        {order.status === 'Cancellation Requested' && (
+                          <button
+                            onClick={() => {
+                              setSelectedOrder(order);
+                              setAdminResponse('');
+                              setShowDetailsModal(true);
+                            }}
+                            className="flex items-center space-x-1 px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 transition"
+                          >
+                            <FiXCircle className="h-4 w-4" />
+                            <span>Handle</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -304,6 +360,75 @@ const AdminOrderList = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Cancellation Request Section */}
+              {selectedOrder.status === 'Cancellation Requested' && selectedOrder.cancellationRequest?.isRequested && (
+                <div className="border-t pt-4 mt-4">
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+                    <h4 className="font-semibold text-orange-900 mb-2">Cancellation Request</h4>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium text-gray-700">Reason:</span>
+                        <p className="text-gray-900 mt-1">{selectedOrder.cancellationRequest.reason}</p>
+                      </div>
+                      {selectedOrder.cancellationRequest.requestDate && (
+                        <div>
+                          <span className="font-medium text-gray-700">Requested on:</span>
+                          <p className="text-gray-900 mt-1">
+                            {formatDate(selectedOrder.cancellationRequest.requestDate)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Admin Response {selectedOrder.cancellationRequest.adminResponse ? '(Current)' : '(Required for rejection)'}
+                    </label>
+                    <textarea
+                      value={adminResponse}
+                      onChange={(e) => setAdminResponse(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      rows="3"
+                      placeholder="Add notes about your decision (required for rejection)..."
+                      maxLength={500}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {adminResponse.length}/500 characters
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end space-x-3">
+                    <button
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        setSelectedOrder(null);
+                        setAdminResponse('');
+                      }}
+                      className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleCancellationAction(selectedOrder._id, 'Reject')}
+                      disabled={processingCancellation === selectedOrder._id || !adminResponse.trim()}
+                      className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    >
+                      <FiXCircle className="h-4 w-4" />
+                      <span>{processingCancellation === selectedOrder._id ? 'Processing...' : 'Reject'}</span>
+                    </button>
+                    <button
+                      onClick={() => handleCancellationAction(selectedOrder._id, 'Approve')}
+                      disabled={processingCancellation === selectedOrder._id}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                    >
+                      <FiCheckCircle className="h-4 w-4" />
+                      <span>{processingCancellation === selectedOrder._id ? 'Processing...' : 'Approve'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

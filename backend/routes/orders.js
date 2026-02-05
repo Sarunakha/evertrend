@@ -7,6 +7,8 @@ import Coupon from '../models/Coupon.js';
 import LoyaltyPoints from '../models/LoyaltyPoints.js';
 import PointTransaction from '../models/PointTransaction.js';
 import Notification from '../models/Notification.js';
+import User from '../models/User.js';
+import Cart from '../models/Cart.js';
 import { protect, authorize, checkOwnership, adminMiddleware } from '../middleware/auth.js';
 import { processPayment } from '../services/paymentService.js';
 
@@ -324,6 +326,21 @@ router.post('/', [
       }
     }
 
+    // Clear cart after successful order creation
+    // Since the order contains all items from the cart, we clear the entire cart
+    try {
+      const cart = await Cart.findOne({ userId: req.user._id });
+      if (cart && cart.items && cart.items.length > 0) {
+        // Clear all items from cart after successful order
+        cart.items = [];
+        await cart.save();
+        console.log(`Cart cleared for user ${req.user._id} after order ${order._id}`);
+      }
+    } catch (cartError) {
+      console.error('Error clearing cart after order creation:', cartError);
+      // Don't fail the order if cart clearing fails
+    }
+
     // Populate order with items
     const populatedItems = await OrderItem.find({ orderId: order._id })
       .populate('productId');
@@ -530,6 +547,222 @@ router.put('/:id/confirm-delivery', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error confirming delivery'
+    });
+  }
+});
+
+// @route   POST /api/orders/:id/cancel
+// @desc    Buyer requests order cancellation
+// @access  Private (Buyer only)
+router.post('/:id/cancel', [
+  body('reason').notEmpty().withMessage('Cancellation reason is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    // Only buyers can request cancellation
+    if (req.user.role !== 'Buyer') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only buyers can request order cancellation'
+      });
+    }
+
+    const { reason } = req.body;
+    const order = await Order.findById(req.params.id).populate('userId', 'username email');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Check if order belongs to the buyer
+    if (order.userId._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to cancel this order'
+      });
+    }
+
+    // Validation: Only orders that are 'Pending' or 'Processing' can be cancelled
+    if (order.status === 'Shipped' || order.status === 'Delivered') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot cancel order. Orders that have been shipped or delivered cannot be cancelled. Please use the Return feature for delivered items.'
+      });
+    }
+
+    // Check if cancellation already requested
+    if (order.cancellationRequest?.isRequested) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cancellation request already exists for this order'
+      });
+    }
+
+    // Update order with cancellation request
+    order.cancellationRequest = {
+      isRequested: true,
+      reason: reason,
+      requestDate: new Date(),
+      adminResponse: null
+    };
+    order.status = 'Cancellation Requested';
+    await order.save();
+
+    // Send notification to all admins
+    try {
+      const admins = await User.find({ role: 'Admin' }).select('_id');
+      const orderIdShort = order._id.toString().slice(-8);
+      const buyerName = order.userId.username || order.userId.email;
+
+      const notificationPromises = admins.map(admin =>
+        Notification.create({
+          recipientId: admin._id,
+          senderId: req.user._id,
+          type: 'ORDER_CANCELLATION_REQUEST',
+          message: `Buyer ${buyerName} has requested to cancel Order #${orderIdShort}`,
+          relatedId: order._id,
+          isRead: false
+        })
+      );
+
+      await Promise.allSettled(notificationPromises);
+    } catch (notificationError) {
+      console.error('Error creating notifications for cancellation request:', notificationError);
+      // Don't fail the cancellation request if notification creation fails
+    }
+
+    res.json({
+      success: true,
+      message: 'Cancellation request submitted successfully. Admin will review your request.',
+      data: order
+    });
+  } catch (error) {
+    console.error('Request cancellation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error requesting cancellation'
+    });
+  }
+});
+
+// @route   PUT /api/orders/:id/handle-cancellation
+// @desc    Admin approves or rejects cancellation request
+// @access  Private (Admin only)
+router.put('/:id/handle-cancellation', adminMiddleware, [
+  body('action').isIn(['Approve', 'Reject']).withMessage('Action must be either Approve or Reject'),
+  body('adminResponse').optional().trim().isLength({ max: 500 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const { action, adminResponse } = req.body;
+    const order = await Order.findById(req.params.id).populate('userId', '_id username email');
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Check if cancellation was requested
+    if (!order.cancellationRequest?.isRequested) {
+      return res.status(400).json({
+        success: false,
+        message: 'No cancellation request exists for this order'
+      });
+    }
+
+    // Check if order is in Cancellation Requested status
+    if (order.status !== 'Cancellation Requested') {
+      return res.status(400).json({
+        success: false,
+        message: `Order is not in 'Cancellation Requested' status. Current status: ${order.status}`
+      });
+    }
+
+    const orderIdShort = order._id.toString().slice(-8);
+    let notificationMessage = '';
+
+    if (action === 'Approve') {
+      // Update order status to Cancelled
+      order.status = 'Cancelled';
+      order.cancellationRequest.adminResponse = adminResponse || 'Cancellation approved by admin';
+      await order.save();
+
+      // Restore stock quantity for products
+      try {
+        const orderItems = await OrderItem.find({ orderId: order._id });
+        for (const item of orderItems) {
+          const product = await Product.findById(item.productId);
+          if (product) {
+            product.stockQuantity += item.quantity;
+            if (product.isSold && product.stockQuantity > 0) {
+              product.isSold = false;
+            }
+            await product.save();
+          }
+        }
+      } catch (stockError) {
+        console.error('Error restoring stock:', stockError);
+        // Don't fail the cancellation if stock restoration fails
+      }
+
+      notificationMessage = `Your cancellation request for Order #${orderIdShort} has been approved.`;
+    } else if (action === 'Reject') {
+      // Revert order status to previous status (Pending or Processing)
+      // We'll default to 'Pending' if we can't determine previous status
+      const previousStatus = order.status === 'Cancellation Requested' ? 'Pending' : 'Pending';
+      order.status = previousStatus;
+      order.cancellationRequest.isRequested = false;
+      order.cancellationRequest.adminResponse = adminResponse || 'Cancellation request rejected by admin';
+      await order.save();
+
+      const rejectionReason = adminResponse ? ` Reason: ${adminResponse}` : '';
+      notificationMessage = `Your cancellation request for Order #${orderIdShort} was rejected.${rejectionReason}`;
+    }
+
+    // Send notification to buyer
+    try {
+      await Notification.create({
+        recipientId: order.userId._id,
+        senderId: req.user._id,
+        type: 'ORDER_CANCELLATION_UPDATE',
+        message: notificationMessage,
+        relatedId: order._id,
+        isRead: false
+      });
+    } catch (notificationError) {
+      console.error('Error creating notification:', notificationError);
+      // Don't fail the cancellation handling if notification creation fails
+    }
+
+    res.json({
+      success: true,
+      message: `Cancellation request ${action.toLowerCase()}d successfully`,
+      data: order
+    });
+  } catch (error) {
+    console.error('Handle cancellation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error handling cancellation request'
     });
   }
 });

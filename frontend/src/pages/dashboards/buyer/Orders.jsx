@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiPackage, FiRefreshCw, FiX, FiCheckCircle } from 'react-icons/fi';
+import { FiPackage, FiRefreshCw, FiX, FiCheckCircle, FiXCircle } from 'react-icons/fi';
 import api from '../../../utils/api';
 
 const Orders = () => {
@@ -15,8 +15,20 @@ const Orders = () => {
   });
   const [submitting, setSubmitting] = useState(false);
   const [confirmingDelivery, setConfirmingDelivery] = useState(null);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancellingOrder, setCancellingOrder] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [submittingCancel, setSubmittingCancel] = useState(false);
 
   const navigate = useNavigate();
+
+  const CANCELLATION_REASONS = [
+    'Changed my mind',
+    'Found a better price',
+    'Ordered by mistake',
+    'Delivery time is too long',
+    'Other'
+  ];
 
   useEffect(() => {
     fetchOrders();
@@ -113,10 +125,45 @@ const Orders = () => {
     }));
   };
 
+  const handleCancelClick = (order) => {
+    setCancellingOrder(order);
+    setShowCancelModal(true);
+    setCancelReason('');
+  };
+
+  const handleCancelSubmit = async (e) => {
+    e.preventDefault();
+    if (!cancelReason.trim()) {
+      alert('Please select a cancellation reason');
+      return;
+    }
+
+    try {
+      setSubmittingCancel(true);
+      await api.post(`/orders/${cancellingOrder._id}/cancel`, {
+        reason: cancelReason
+      });
+      alert('Cancellation request submitted successfully! Admin will review your request.');
+      setShowCancelModal(false);
+      setCancelReason('');
+      setCancellingOrder(null);
+      fetchOrders(); // Refresh orders
+    } catch (error) {
+      console.error('Error submitting cancellation request:', error);
+      alert(error.response?.data?.message || 'Error submitting cancellation request');
+    } finally {
+      setSubmittingCancel(false);
+    }
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'Pending':
         return 'bg-yellow-100 text-yellow-800';
+      case 'Processing':
+        return 'bg-purple-100 text-purple-800';
+      case 'Cancellation Requested':
+        return 'bg-orange-100 text-orange-800';
       case 'Shipped':
         return 'bg-blue-100 text-blue-800';
       case 'Delivered':
@@ -190,6 +237,16 @@ const Orders = () => {
                       >
                         <FiCheckCircle className="h-4 w-4" />
                         <span>{confirmingDelivery === order._id ? 'Confirming...' : 'Confirm Delivery'}</span>
+                      </button>
+                    )}
+                    {(order.status === 'Pending' || order.status === 'Processing') && (
+                      <button
+                        onClick={() => handleCancelClick(order)}
+                        className="mt-2 flex items-center space-x-1 px-3 py-1 text-sm rounded-md hover:opacity-90 transition"
+                        style={{ backgroundColor: '#ef4444', color: 'white' }}
+                      >
+                        <FiXCircle className="h-4 w-4" />
+                        <span>Cancel Order</span>
                       </button>
                     )}
                   </div>
@@ -347,6 +404,89 @@ const Orders = () => {
                     style={{ backgroundColor: '#fab242' }}
                   >
                     {submitting ? 'Submitting...' : 'Submit Request'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancel Order Modal */}
+      {showCancelModal && cancellingOrder && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-gray-900">Cancel Order</h3>
+                <button
+                  onClick={() => {
+                    setShowCancelModal(false);
+                    setCancellingOrder(null);
+                    setCancelReason('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <FiX className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600 mb-1">Order #{cancellingOrder._id.toString().slice(-8)}</p>
+                <p className="font-medium text-gray-900">
+                  Total: Rs. {cancellingOrder.totalAmount?.toFixed(2) || '0.00'}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  Placed on {formatDate(cancellingOrder.orderDate)}
+                </p>
+              </div>
+
+              <form onSubmit={handleCancelSubmit}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for Cancellation *
+                  </label>
+                  <select
+                    value={cancelReason}
+                    onChange={(e) => setCancelReason(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  >
+                    <option value="">Select a reason...</option>
+                    {CANCELLATION_REASONS.map((reason) => (
+                      <option key={reason} value={reason}>
+                        {reason}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Note:</strong> Your cancellation request will be sent to the admin for review. 
+                    The order will only be cancelled after admin approval.
+                  </p>
+                </div>
+
+                <div className="flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCancelModal(false);
+                      setCancellingOrder(null);
+                      setCancelReason('');
+                    }}
+                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingCancel || !cancelReason}
+                    className="px-4 py-2 text-white rounded-md hover:opacity-90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: '#ef4444' }}
+                  >
+                    {submittingCancel ? 'Submitting...' : 'Submit Cancellation Request'}
                   </button>
                 </div>
               </form>

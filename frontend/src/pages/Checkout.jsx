@@ -8,7 +8,7 @@ import api from '../utils/api';
 
 const Checkout = () => {
   const { user } = useAuth();
-  const { cart, getCartTotal, fetchCart } = useCart();
+  const { cart, getCartTotal, fetchCart, clearCart } = useCart();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -105,8 +105,8 @@ const Checkout = () => {
       });
 
       if (response.data.success) {
-        // Clear cart and redirect to success page
-        await fetchCart();
+        // Clear cart after successful order creation
+        await clearCart();
         navigate('/payment/success', { 
           state: { order: response.data.data } 
         });

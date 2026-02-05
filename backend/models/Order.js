@@ -14,7 +14,7 @@ const orderSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Shipped', 'Delivered', 'Cancelled'],
+    enum: ['Pending', 'Processing', 'Cancellation Requested', 'Shipped', 'Delivered', 'Cancelled'],
     default: 'Pending',
     index: true
   },
@@ -58,6 +58,25 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     min: [0, 'Points redeemed cannot be negative']
+  },
+  // Cancellation Request
+  cancellationRequest: {
+    isRequested: {
+      type: Boolean,
+      default: false
+    },
+    reason: {
+      type: String,
+      default: null
+    },
+    requestDate: {
+      type: Date,
+      default: null
+    },
+    adminResponse: {
+      type: String,
+      default: null
+    }
   }
 }, {
   timestamps: true
