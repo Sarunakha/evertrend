@@ -116,7 +116,7 @@ router.post('/', protect, authorize('Seller', 'Admin'), [
   body('price').isFloat({ min: 0 }).withMessage('Valid price is required'),
   body('category').isIn(['Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Accessories', 'Shoes']),
   body('size').isIn(['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size']),
-  body('condition').isIn(['New', 'Like New', 'Good', 'Fair', 'Poor']),
+  body('condition').isIn(['New', 'Good', 'Fair', 'Poor']),
   body('stockQuantity').optional().isInt({ min: 0 })
 ], async (req, res, next) => {
   try {
@@ -135,13 +135,19 @@ router.post('/', protect, authorize('Seller', 'Admin'), [
     }
 
     // Ensure price is a number
+    // Handle "Like New" condition - map it to "Good" for backward compatibility
+    let condition = req.body.condition;
+    if (condition === 'Like New') {
+      condition = 'Good';
+    }
+    
     const productData = {
       name: req.body.name?.trim(),
       description: req.body.description?.trim(),
       price: parseFloat(req.body.price),
       category: req.body.category,
       size: req.body.size,
-      condition: req.body.condition,
+      condition: condition,
       stockQuantity: parseInt(req.body.stockQuantity) || 1,
       images: Array.isArray(req.body.images) ? req.body.images : [],
       dimensions: req.body.dimensions || {},
@@ -224,6 +230,9 @@ router.put('/:id', protect, authorize('Seller', 'Admin'), checkOwnership(Product
   body('name').optional().trim().notEmpty(),
   body('description').optional().trim().notEmpty(),
   body('price').optional().isFloat({ min: 0 }),
+  body('condition').optional().isIn(['New', 'Good', 'Fair', 'Poor']),
+  body('category').optional().isIn(['Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Accessories', 'Shoes']),
+  body('size').optional().isIn(['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size']),
   body('stockQuantity').optional().isInt({ min: 0 })
 ], async (req, res) => {
   try {
@@ -269,9 +278,22 @@ router.put('/:id', protect, authorize('Seller', 'Admin'), checkOwnership(Product
       req.body.images = validImageUrls;
     }
 
+    // Handle "Like New" condition - map it to "Good" for backward compatibility
+    const updateData = { ...req.body };
+    if (updateData.condition === 'Like New') {
+      updateData.condition = 'Good';
+    }
+    
+    // Filter out undefined values
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
+      }
+    });
+
     const product = await Product.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
 

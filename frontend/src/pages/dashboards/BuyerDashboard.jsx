@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import Profile from './buyer/Profile';
 import Orders from './buyer/Orders';
 import Points from './buyer/Points';
-import { FiUser, FiPackage, FiStar } from 'react-icons/fi';
+import Chat from './buyer/Chat';
+import { FiUser, FiPackage, FiStar, FiMessageSquare } from 'react-icons/fi';
 
 const BuyerDashboard = () => {
   const { user } = useAuth();
@@ -13,6 +14,7 @@ const BuyerDashboard = () => {
   const navigation = [
     { name: 'Profile', href: '/dashboard/buyer/profile', icon: FiUser },
     { name: 'Orders', href: '/dashboard/buyer/orders', icon: FiPackage },
+    { name: 'Messages', href: '/dashboard/buyer/chat', icon: FiMessageSquare },
     { name: 'TrendPoints', href: '/dashboard/buyer/points', icon: FiStar },
   ];
 
@@ -58,6 +60,7 @@ const BuyerDashboard = () => {
             <Routes>
               <Route path="profile" element={<Profile />} />
               <Route path="orders" element={<Orders />} />
+              <Route path="chat" element={<Chat />} />
               <Route path="points" element={<Points />} />
               <Route path="" element={<Profile />} />
             </Routes>

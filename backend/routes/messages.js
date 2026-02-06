@@ -1,7 +1,9 @@
 import express from 'express';
 import Message from '../models/Message.js';
 import Conversation from '../models/Conversation.js';
+import Notification from '../models/Notification.js';
 import { protect } from '../middleware/auth.js';
+import { getIO, getActiveUsers } from '../socket/socket.js';
 
 const router = express.Router();
 
@@ -98,6 +100,86 @@ router.post('/', protect, async (req, res) => {
     await conversation.save();
     
     await message.populate('senderId', 'username email');
+
+    // Get receiver ID for notification and socket
+    const receiverId = conversation.participants.find(
+      p => p.toString() !== req.user._id.toString()
+    );
+    const senderName = req.user.username || req.user.email || 'Someone';
+
+    // Create notification for the recipient
+    if (receiverId) {
+      try {
+        const notification = await Notification.create({
+          recipientId: receiverId,
+          senderId: req.user._id,
+          type: 'NEW_MESSAGE',
+          message: `You have a new message from ${senderName}.`,
+          relatedId: conversation._id,
+          isRead: false
+        });
+        // Emit new notification in real-time so recipient's bell updates
+        try {
+          const io = getIO();
+          const activeUsers = getActiveUsers();
+          const receiverSocketId = activeUsers.get(String(receiverId));
+          if (io && receiverSocketId) {
+            io.to(receiverSocketId).emit('newNotification', {
+              _id: notification._id,
+              message: notification.message,
+              type: notification.type,
+              relatedId: notification.relatedId,
+              createdAt: notification.createdAt
+            });
+          }
+        } catch (socketErr) {
+          console.error('Error emitting newNotification:', socketErr);
+        }
+      } catch (notificationError) {
+        console.error('Error creating message notification:', notificationError);
+      }
+    }
+    
+    // Emit real-time message via Socket.io to both sender and receiver
+    try {
+      const io = getIO();
+      if (io) {
+        // Prepare message data with all IDs as strings
+        const messageData = {
+          conversationId: String(conversation._id),
+          senderId: String(req.user._id),
+          sender: {
+            _id: String(req.user._id),
+            username: req.user.username || 'Unknown',
+            email: req.user.email || ''
+          },
+          content: message.content,
+          timestamp: message.timestamp || message.createdAt || new Date(),
+          _id: String(message._id)
+        };
+
+        const activeUsers = getActiveUsers();
+        const senderIdStr = String(req.user._id);
+        
+        // Emit to receiver if they're online
+        if (receiverId) {
+          const receiverIdStr = String(receiverId);
+          const receiverSocketId = activeUsers.get(receiverIdStr);
+          if (receiverSocketId) {
+            io.to(receiverSocketId).emit('getMessage', messageData);
+          }
+        }
+        
+        // Also emit to sender so they can see their own message in real-time
+        const senderSocketId = activeUsers.get(senderIdStr);
+        if (senderSocketId) {
+          io.to(senderSocketId).emit('getMessage', messageData);
+        }
+      }
+    } catch (socketError) {
+      console.error('Error emitting socket message:', socketError);
+      // Don't fail the API request if socket emission fails
+    }
     
     res.status(201).json({
       success: true,

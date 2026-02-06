@@ -14,13 +14,14 @@ const Products = () => {
     search: '',
     category: categoryFromUrl,
     size: '',
-    collection: '', // New: 'new-arrivals', 'thrift-finds', or ''
-    condition: '',
+    collection: '', // Level 1: '', 'new-arrivals', 'thrift-finds'
+    condition: '',  // Level 2: only used when collection === 'thrift-finds'
     minPrice: '',
     maxPrice: '',
     sortBy: 'createdAt',
     sortOrder: 'desc'
   });
+  const showConditionFilter = filters.collection === 'thrift-finds';
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
 
   // Update filters when URL params change
@@ -74,31 +75,30 @@ const Products = () => {
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    
-    // If collection changes, reset condition filter
+
     if (name === 'collection') {
-      setFilters({ 
-        ...filters, 
+      setFilters({
+        ...filters,
         collection: value,
-        condition: '' // Clear condition when switching collection type
+        condition: '' // Clear condition when switching to All or New Arrivals
       });
     } else {
       setFilters({ ...filters, [name]: value });
     }
-    
+
     setPagination({ ...pagination, page: 1 });
   };
 
   return (
     <div className="min-h-screen flex flex-col">
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">
-        {filters.category ? `${filters.category}` : 'All Products'}
+      <h1 className="text-3xl font-bold text-gray-900 mb-6">
+        All Products
       </h1>
 
       {/* Filters */}
-      <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${filters.collection === 'thrift-finds' ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
+      <div className="bg-white p-4 rounded-lg shadow-sm mb-6">
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${showConditionFilter ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Search
@@ -184,6 +184,7 @@ const Products = () => {
             </select>
           </div>
 
+          {/* Level 1: Collection / Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Collection
@@ -203,14 +204,14 @@ const Products = () => {
               value={filters.collection}
               onChange={handleFilterChange}
             >
-              <option value="">All Products</option>
+              <option value="">All</option>
               <option value="new-arrivals">New Arrivals</option>
               <option value="thrift-finds">Thrift Finds</option>
             </select>
           </div>
 
-          {/* Condition dropdown - only visible when Thrift Finds is selected */}
-          {filters.collection === 'thrift-finds' && (
+          {/* Level 2: Condition — only when Thrift Finds is selected */}
+          {showConditionFilter && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Condition
@@ -252,38 +253,54 @@ const Products = () => {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {products.map((product) => (
-              <Link
-                key={product._id}
-                to={`/products/${product._id}`}
-                className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
-              >
-                {product.images && product.images[0] && (
-                  <img
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="w-full h-64 object-cover"
-                  />
-                )}
-                <div className="p-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-semibold text-lg flex-1">{product.name}</h3>
+            {products.map((product) => {
+              // Get the first valid image URL
+              const imageUrl = product.images && Array.isArray(product.images) && product.images.length > 0 
+                ? product.images.find(img => img && img.trim() !== '') || product.images[0]
+                : null;
+              
+              return (
+                <Link
+                  key={product._id}
+                  to={`/products/${product._id}`}
+                  className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition relative"
+                >
+                  <div className="relative">
+                    {imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt={product.description ? `${product.name || 'Product'} - ${product.description}` : product.name || 'Product'}
+                        className="w-full h-80 object-cover"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="320"%3E%3Crect fill="%23e5e7eb" width="400" height="320"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage failed to load%3C/text%3E%3C/svg%3E';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-80 bg-gray-200 flex items-center justify-center">
+                        <p className="text-gray-400 text-sm">No image</p>
+                      </div>
+                    )}
+                    {/* Availability Badge - Top Right Corner */}
                     {product.stockQuantity === 0 && (
-                      <span className="ml-2 px-2 py-1 text-xs font-semibold text-red-800 bg-red-100 rounded">
+                      <span className="absolute top-2 right-2 px-2 py-1 text-xs font-semibold text-red-800 bg-red-100 rounded-full">
                         Out of Stock
                       </span>
                     )}
                     {product.stockQuantity > 0 && product.stockQuantity < 5 && (
-                      <span className="ml-2 px-2 py-1 text-xs font-semibold text-orange-800 bg-orange-100 rounded">
+                      <span className="absolute top-2 right-2 px-2 py-1 text-xs font-semibold text-orange-800 bg-orange-100 rounded-full">
                         Only {product.stockQuantity} left
                       </span>
                     )}
                   </div>
-                  <p className="text-gray-600 text-sm mb-2">{product.category} • {product.size}</p>
-                  <p className="font-bold text-xl" style={{ color: '#fab242' }}>Rs.{product.price}</p>
-                </div>
-              </Link>
-            ))}
+                  <div className="p-4 bg-white">
+                    <h3 className="font-semibold text-lg mb-2 line-clamp-2 text-gray-900">{product.name || 'Product'}</h3>
+                    <p className="text-gray-600 text-sm mb-2">{product.category || 'N/A'} • {product.size || 'N/A'}</p>
+                    <p className="font-bold text-xl" style={{ color: '#fab242' }}>Rs.{product.price || '0'}</p>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
 
           {/* Pagination */}

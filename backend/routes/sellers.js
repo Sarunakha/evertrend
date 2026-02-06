@@ -26,6 +26,7 @@ router.get('/products', async (req, res) => {
     console.log('Fetching products for seller:', req.user._id);
 
     // Optimize query: use lean() for faster queries and only select needed fields
+    // Map "Like New" to "Good" for backward compatibility with existing products
     const products = await Product.find(query)
       .select('name description price category size condition stockQuantity isSold images dimensions createdAt')
       .sort({ createdAt: -1 }) // Use index on createdAt
@@ -33,6 +34,14 @@ router.get('/products', async (req, res) => {
       .skip((parseInt(page) - 1) * parseInt(limit))
       .lean() // Returns plain JS objects (faster than Mongoose documents)
       .exec();
+    
+    // Map "Like New" condition to "Good" for display compatibility
+    const mappedProducts = products.map(product => {
+      if (product.condition === 'Like New') {
+        product.condition = 'Good';
+      }
+      return product;
+    });
 
     const queryTime = Date.now() - startTime;
     console.log(`Products fetched in ${queryTime}ms. Found ${products.length} products.`);
@@ -41,7 +50,7 @@ router.get('/products', async (req, res) => {
 
     res.json({
       success: true,
-      data: products,
+      data: mappedProducts,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),

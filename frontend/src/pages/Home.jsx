@@ -104,26 +104,40 @@ const Home = () => {
               </div>
             ) : thriftProducts.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {thriftProducts.map((product) => (
-                  <Link
-                    key={product._id}
-                    to={`/products/${product._id}`}
-                    className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
-                  >
-                    {product.images && product.images[0] && (
-                      <img
-                        src={product.images[0]}
-                        alt={product.name}
-                        className="w-full h-64 object-cover"
-                      />
-                    )}
-                    <div className="p-4">
-                      <h3 className="font-semibold text-lg mb-2">{product.name}</h3>
-                      <p className="text-gray-600 text-sm mb-2">{product.category} • {product.size}</p>
-                      <p className="font-bold text-xl" style={{ color: '#fab242' }}>Rs.{product.price}</p>
-                    </div>
-                  </Link>
-                ))}
+                {thriftProducts.map((product) => {
+                  const imageUrl = product.images && Array.isArray(product.images) && product.images.length > 0 
+                    ? product.images.find(img => img && img.trim() !== '') || product.images[0]
+                    : null;
+                  
+                  return (
+                    <Link
+                      key={product._id}
+                      to={`/products/${product._id}`}
+                      className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
+                    >
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={product.description ? `${product.name || 'Product'} - ${product.description}` : product.name || 'Product'}
+                          className="w-full h-80 object-cover"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="320"%3E%3Crect fill="%23e5e7eb" width="400" height="320"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage failed to load%3C/text%3E%3C/svg%3E';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-80 bg-gray-200 flex items-center justify-center">
+                          <p className="text-gray-400 text-sm">No image</p>
+                        </div>
+                      )}
+                      <div className="p-4 bg-white">
+                        <h3 className="font-semibold text-lg mb-2 text-gray-900">{product.name || 'Product'}</h3>
+                        <p className="text-gray-600 text-sm mb-2">{product.category || 'N/A'} • {product.size || 'N/A'}</p>
+                        <p className="font-bold text-xl" style={{ color: '#fab242' }}>Rs.{product.price || '0'}</p>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-12 bg-gray-50 rounded-lg">
@@ -156,26 +170,40 @@ const Home = () => {
               </div>
             ) : newArrivals.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                {newArrivals.map((product) => (
-                  <Link
-                    key={product._id}
-                    to={`/products/${product._id}`}
-                    className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
-                  >
-                    {product.images && product.images[0] && (
-                      <img
-                        src={product.images[0]}
-                        alt={product.name}
-                        className="w-full h-64 object-cover"
-                      />
-                    )}
-                    <div className="p-4">
-                      <h3 className="font-semibold text-lg mb-2">{product.name}</h3>
-                      <p className="text-gray-600 text-sm mb-2">{product.category} • {product.size}</p>
-                      <p className="font-bold text-xl" style={{ color: '#fab242' }}>Rs.{product.price}</p>
-                    </div>
-                  </Link>
-                ))}
+                {newArrivals.map((product) => {
+                  const imageUrl = product.images && Array.isArray(product.images) && product.images.length > 0 
+                    ? product.images.find(img => img && img.trim() !== '') || product.images[0]
+                    : null;
+                  
+                  return (
+                    <Link
+                      key={product._id}
+                      to={`/products/${product._id}`}
+                      className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition"
+                    >
+                      {imageUrl ? (
+                        <img
+                          src={imageUrl}
+                          alt={product.description ? `${product.name || 'Product'} - ${product.description}` : product.name || 'Product'}
+                          className="w-full h-80 object-cover"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="320"%3E%3Crect fill="%23e5e7eb" width="400" height="320"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage failed to load%3C/text%3E%3C/svg%3E';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-80 bg-gray-200 flex items-center justify-center">
+                          <p className="text-gray-400 text-sm">No image</p>
+                        </div>
+                      )}
+                      <div className="p-4 bg-white">
+                        <h3 className="font-semibold text-lg mb-2 text-gray-900">{product.name || 'Product'}</h3>
+                        <p className="text-gray-600 text-sm mb-2">{product.category || 'N/A'} • {product.size || 'N/A'}</p>
+                        <p className="font-bold text-xl" style={{ color: '#fab242' }}>Rs.{product.price || '0'}</p>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-12 bg-gray-50 rounded-lg">

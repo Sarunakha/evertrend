@@ -14,6 +14,7 @@ import fitRecommendationRoutes from './routes/fitRecommendation.js';
 import cartRoutes from './routes/cart.js';
 import conversationRoutes from './routes/conversations.js';
 import messageRoutes from './routes/messages.js';
+import chatRoutes from './routes/chatRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import loyaltyRoutes from './routes/loyalty.js';
 import couponRoutes from './routes/coupons.js';
@@ -56,6 +57,7 @@ app.use('/api/fit-recommendation', fitRecommendationRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/chat', chatRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/coupons', couponRoutes);
@@ -106,12 +108,22 @@ const MAX_PORT_PROBES = 5;
  * @param {number} port
  * @param {number} probes
  */
-const attemptListen = (port, probes = 0) => {
+const attemptListen = async (port, probes = 0) => {
   const server = app
-    .listen(port, () => {
+    .listen(port, async () => {
       console.log(`\n✅ Server running in ${process.env.NODE_ENV || 'development'} mode on port ${port}`);
       console.log(`🌐 API available at: http://localhost:${port}/api`);
       console.log(`💚 Health check: http://localhost:${port}/api/health`);
+      
+      // Initialize Socket.io after server starts
+      try {
+        const { initializeSocket } = await import('./socket/socket.js');
+        initializeSocket(server);
+        console.log(`💬 Socket.io server initialized for real-time chat`);
+      } catch (socketError) {
+        console.error('Error initializing Socket.io:', socketError);
+      }
+      
       console.log(`\n📡 Server is ready and waiting for requests...\n`);
     })
     .on('error', (error) => {
@@ -135,7 +147,7 @@ const attemptListen = (port, probes = 0) => {
 const startServer = async () => {
   try {
     await connectDB();
-    attemptListen(BASE_PORT);
+    await attemptListen(BASE_PORT);
   } catch (error) {
     console.error('Unable to connect to MongoDB:', error);
     process.exit(1);

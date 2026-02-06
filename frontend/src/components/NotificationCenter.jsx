@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiBell, FiX } from 'react-icons/fi';
 import api from '../utils/api';
+import { useSocket } from '../context/SocketContext';
 
 const NotificationCenter = () => {
   const [notifications, setNotifications] = useState([]);
@@ -10,6 +11,7 @@ const NotificationCenter = () => {
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
+  const { socket } = useSocket();
 
   useEffect(() => {
     // Fetch unread count on mount
@@ -27,6 +29,18 @@ const NotificationCenter = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  // Real-time: when a new notification is received (e.g. NEW_MESSAGE), refresh list and unread count
+  useEffect(() => {
+    if (!socket) return;
+    const handleNewNotification = () => {
+      fetchNotifications();
+    };
+    socket.on('newNotification', handleNewNotification);
+    return () => {
+      socket.off('newNotification', handleNewNotification);
+    };
+  }, [socket]);
 
   useEffect(() => {
     // Refresh notifications when dropdown is opened
@@ -65,7 +79,12 @@ const NotificationCenter = () => {
     }
 
     // Navigate based on notification type
-    if (notification.relatedId) {
+    if (notification.type === 'NEW_MESSAGE') {
+      const conversationPath = notification.relatedId
+        ? `/messages/${notification.relatedId}`
+        : '/messages';
+      navigate(conversationPath);
+    } else if (notification.relatedId) {
       if (notification.type === 'REFUND_UPDATE' || notification.type === 'REFUND_REQUEST') {
         navigate('/dashboard/buyer/orders');
       } else if (notification.type === 'ORDER_STATUS' || notification.type === 'ORDER_UPDATE') {

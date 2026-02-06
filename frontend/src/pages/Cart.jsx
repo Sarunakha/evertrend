@@ -108,13 +108,20 @@ const Cart = () => {
                             to={`/products/${product._id}`}
                             className="flex-shrink-0 w-full sm:w-32 h-32 bg-gray-100 rounded-md overflow-hidden"
                           >
-                            {product.images && product.images[0] ? (
-                              <img
-                                src={product.images[0]}
-                                alt={product.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
+                            {product.images && product.images[0] ? (() => {
+                              const imageUrl = product.images[0];
+                              return (
+                                <img
+                                  src={imageUrl}
+                                  alt={product.description ? `${product.name} - ${product.description}` : product.name || 'Product image'}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="128" height="128"%3E%3Crect fill="%23f3f4f6" width="128" height="128"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="12" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage failed%3C/text%3E%3C/svg%3E';
+                                  }}
+                                />
+                              );
+                            })() : (
                               <div className="w-full h-full flex items-center justify-center">
                                 <FiShoppingCart className="h-8 w-8 text-gray-400" />
                               </div>

@@ -101,7 +101,10 @@ const Products = () => {
     if (!url.trim()) return true; // Empty URL is allowed (will be filtered out)
     try {
       new URL(url);
-      return url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || url.startsWith('http');
+      // Accept Pinterest URLs, direct image URLs, or any HTTP/HTTPS URL
+      return url.includes('pinterest.com/pin/') || 
+             url.match(/\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$/i) || 
+             url.startsWith('http');
     } catch {
       return false;
     }
@@ -267,6 +270,126 @@ const Products = () => {
     setError('');
   };
 
+  // Image Preview Component for form
+  const ImagePreview = ({ url, index }) => {
+    const [imageUrl, setImageUrl] = useState(url);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(false);
+    const isPinterestUrl = url && url.includes('pinterest.com/pin/');
+    
+    useEffect(() => {
+      // Reset states when URL changes
+      setError(false);
+      setImageUrl(url);
+      
+      // Use URL directly (no proxy); for Pinterest pin URLs the image may not load until a direct image URL is used
+      setLoading(false);
+    }, [url]);
+    
+    if (error) {
+      return (
+        <div className="mt-2 w-24 h-24 bg-gray-200 rounded-md border border-gray-300 flex items-center justify-center">
+          <p className="text-xs text-gray-500 text-center px-1">Failed to load</p>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="mt-2">
+        {loading ? (
+          <div className="w-24 h-24 bg-gray-200 rounded-md border border-gray-300 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2" style={{ borderColor: '#fab242' }}></div>
+          </div>
+        ) : (
+          <img
+            src={imageUrl}
+            alt={`Preview ${index + 1}`}
+            className="w-24 h-24 object-cover rounded-md border border-gray-300"
+            onError={(e) => {
+              if (isPinterestUrl) {
+                setError(true);
+              }
+              e.target.style.display = 'none';
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
+  // Product Card Component
+  const ProductCard = ({ product, onEdit, onDelete }) => {
+    // Get the first valid image URL
+    const imageUrl = product.images && Array.isArray(product.images) && product.images.length > 0 
+      ? product.images.find(img => img && img.trim() !== '') || product.images[0]
+      : null;
+
+    return (
+      <div className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition relative">
+        <div className="relative">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={product.description ? `${product.name} - ${product.description}` : product.name || 'Product'}
+              className="w-full h-80 object-cover"
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="320"%3E%3Crect fill="%23e5e7eb" width="400" height="320"/%3E%3Ctext fill="%239ca3af" font-family="sans-serif" font-size="14" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage failed to load%3C/text%3E%3C/svg%3E';
+              }}
+            />
+          ) : (
+            <div className="w-full h-80 bg-gray-200 flex items-center justify-center">
+              <FiImage className="h-12 w-12 text-gray-400" />
+            </div>
+          )}
+          {/* Availability Badge - Top Right Corner */}
+          {product.stockQuantity === 0 && (
+            <span className="absolute top-2 right-2 px-2 py-1 text-xs font-semibold text-red-800 bg-red-100 rounded-full">
+              Out of Stock
+            </span>
+          )}
+          {product.stockQuantity > 0 && product.stockQuantity < 5 && (
+            <span className="absolute top-2 right-2 px-2 py-1 text-xs font-semibold text-orange-800 bg-orange-100 rounded-full">
+              Only {product.stockQuantity} left
+            </span>
+          )}
+          {product.isSold && (
+            <span className="absolute top-2 left-2 px-2 py-1 text-xs font-semibold text-white bg-red-600 rounded-full">
+              Sold
+            </span>
+          )}
+        </div>
+        <div className="p-4">
+          <h3 className="font-semibold text-lg mb-2 line-clamp-2">{product.name}</h3>
+          <p className="text-gray-600 text-sm mb-2">{product.category} • {product.size}</p>
+          <p className="font-bold text-xl mb-3" style={{ color: '#fab242' }}>Rs.{product.price}</p>
+          <div className="flex items-center justify-between">
+            <span className={`px-2 py-1 rounded text-xs ${
+              product.isSold ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+            }`}>
+              {product.isSold ? 'Sold' : 'Active'}
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => onEdit(product)}
+                className="p-2 text-primary-600 hover:bg-primary-50 rounded transition"
+                style={{ color: '#fab242' }}
+              >
+                <FiEdit className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => onDelete(product._id)}
+                className="p-2 text-red-600 hover:bg-red-50 rounded transition"
+              >
+                <FiTrash2 className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
@@ -401,7 +524,6 @@ const Products = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md"
               >
                 <option value="New">New</option>
-                <option value="Like New">Like New</option>
                 <option value="Good">Good</option>
                 <option value="Fair">Fair</option>
                 <option value="Poor">Poor</option>
@@ -426,16 +548,7 @@ const Products = () => {
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
                     />
                     {url && validateImageUrl(url) && (
-                      <div className="mt-2">
-                        <img
-                          src={url}
-                          alt={`Preview ${index + 1}`}
-                          className="w-24 h-24 object-cover rounded-md border border-gray-300"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                          }}
-                        />
-                      </div>
+                      <ImagePreview url={url} index={index} />
                     )}
                     {url && !validateImageUrl(url) && (
                       <p className="text-sm text-red-500 mt-1">Invalid image URL</p>
@@ -464,7 +577,8 @@ const Products = () => {
               )}
             </div>
             <p className="text-sm text-gray-500 mt-2">
-              Enter image URLs from the internet (e.g., from Imgur, Cloudinary, or any image hosting service)
+              Enter image URLs from the internet (e.g., from Imgur, Cloudinary, Pinterest, or any image hosting service).
+              <span className="text-green-600 font-semibold"> Pinterest pin URLs are now supported!</span>
             </p>
           </div>
 
@@ -529,52 +643,14 @@ const Products = () => {
         </form>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {products.map((product) => (
-          <div key={product._id} className="border rounded-lg p-4">
-            {product.images && product.images.length > 0 && product.images[0] ? (
-              <img
-                src={product.images[0]}
-                alt={product.name}
-                className="w-full h-48 object-cover rounded-md mb-4"
-                onError={(e) => {
-                  console.error('Image failed to load:', product.images[0]);
-                  e.target.style.display = 'none';
-                }}
-              />
-            ) : (
-              <div className="w-full h-48 bg-gray-200 rounded-md mb-4 flex items-center justify-center">
-                <FiImage className="h-12 w-12 text-gray-400" />
-              </div>
-            )}
-            <h3 className="font-semibold text-lg mb-2">{product.name}</h3>
-            <p className="text-gray-600 text-sm mb-2">{product.category} • {product.size}</p>
-            <p className="font-bold mb-2" style={{ color: '#fab242' }}>Rs.{product.price}</p>
-            <div className="flex items-center justify-between">
-              <span className={`px-2 py-1 rounded text-xs ${
-                product.isSold ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-              }`}>
-                {product.isSold ? 'Sold' : 'Active'}
-              </span>
-              <div className="space-x-2">
-                <button
-                  onClick={() => handleEdit(product)}
-                  className="transition"
-                  style={{ color: '#fab242' }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#d19c49'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = '#fab242'}
-                >
-                  <FiEdit />
-                </button>
-                <button
-                  onClick={() => handleDelete(product._id)}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  <FiTrash2 />
-                </button>
-              </div>
-            </div>
-          </div>
+          <ProductCard 
+            key={product._id} 
+            product={product} 
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
         ))}
       </div>
     </div>

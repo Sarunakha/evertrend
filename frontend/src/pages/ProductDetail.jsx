@@ -113,13 +113,28 @@ const ProductDetail = () => {
       <div className="grid md:grid-cols-2 gap-8">
         {/* Product Images */}
         <div>
-          {product.images && product.images[0] && (
-            <img
-              src={product.images[0]}
-              alt={product.name}
-              className="w-full h-98 object-cover rounded-lg"
-            />
-          )}
+          {(() => {
+            // Get the first valid image URL
+            const imageUrl = product.images && Array.isArray(product.images) && product.images.length > 0 
+              ? product.images.find(img => img && img.trim() !== '') || product.images[0]
+              : null;
+            
+            return imageUrl ? (
+              <img
+                src={imageUrl}
+                alt={product.description ? `${product.name || 'Product'} - ${product.description}` : product.name || 'Product'}
+                className="w-full h-[600px] object-cover rounded-lg"
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="600" height="600"%3E%3Crect fill="%23e5e7eb" width="600" height="600"/%3E%3Ctext fill="%236b7280" font-family="sans-serif" font-size="16" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage failed to load%3C/text%3E%3C/svg%3E';
+                }}
+              />
+            ) : (
+              <div className="w-full h-[600px] bg-gray-200 rounded-lg flex items-center justify-center">
+                <p className="text-gray-500">No image available</p>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Product Details */}
@@ -254,15 +269,30 @@ const ProductDetail = () => {
                 {user && user._id !== product.sellerId._id && (
                   <button
                     onClick={async () => {
+                      if (!user) {
+                        navigate('/login?redirect=' + encodeURIComponent(`/products/${id}`));
+                        return;
+                      }
+                      
                       try {
                         // Create or get conversation
-                        const response = await api.post('/conversations', {
-                          participantId: product.sellerId._id,
+                        const response = await api.post('/chat/conversation', {
+                          receiverId: product.sellerId._id,
                           productId: product._id
                         });
+                        
+                        if (response.data.success) {
+                          // Navigate to chat page with conversation ID
+                          navigate(`/messages/${response.data.data._id}`, {
+                            state: { 
+                              conversation: response.data.data,
+                              product: product
+                            }
+                          });
+                        }
                       } catch (error) {
                         console.error('Error creating conversation:', error);
-                        alert('Failed to start conversation');
+                        alert(error.response?.data?.message || 'Failed to start conversation. Please try again.');
                       }
                     }}
                     className="w-full text-white px-4 py-2 rounded-md flex items-center justify-center space-x-2 transition"
@@ -271,7 +301,7 @@ const ProductDetail = () => {
                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fab242'}
                   >
                     <FiMessageSquare />
-                    <span>Message Seller</span>
+                    <span>Chat with Seller</span>
                   </button>
                 )}
               </div>

@@ -261,12 +261,23 @@ const Orders = () => {
                         className="flex justify-between items-center p-3 bg-gray-50 rounded-lg"
                       >
                         <div className="flex items-center space-x-3 flex-1">
-                          {item.productId?.images?.[0] && (
-                            <img
-                              src={item.productId.images[0]}
-                              alt={item.productId.name}
-                              className="w-16 h-16 object-cover rounded"
-                            />
+                          {item.productId?.images?.[0] ? (() => {
+                            const imageUrl = item.productId.images[0];
+                            return (
+                              <img
+                                src={imageUrl}
+                                alt={item.productId.description ? `${item.productId.name} - ${item.productId.description}` : item.productId.name || 'Product image'}
+                                className="w-16 h-16 object-cover rounded"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="64" height="64"%3E%3Crect fill="%23e5e7eb" width="64" height="64"/%3E%3C/svg%3E';
+                                }}
+                              />
+                            );
+                          })() : (
+                            <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center">
+                              <FiPackage className="h-6 w-6 text-gray-400" />
+                            </div>
                           )}
                           <div>
                             <p className="font-medium text-gray-900">
@@ -320,12 +331,17 @@ const Orders = () => {
               {selectedItem && (
                 <div className="mb-4 p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center space-x-3">
-                    {selectedItem.productId?.images?.[0] && (
-                      <img
+                    {selectedItem.productId?.images?.[0] ? (
+                      <PinterestImage
                         src={selectedItem.productId.images[0]}
-                        alt={selectedItem.productId.name}
+                        alt={selectedItem.productId.description ? `${selectedItem.productId.name} - ${selectedItem.productId.description}` : selectedItem.productId.name || 'Product image'}
                         className="w-16 h-16 object-cover rounded"
+                        fallbackClassName="w-16 h-16 bg-gray-200 rounded flex items-center justify-center"
                       />
+                    ) : (
+                      <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center">
+                        <FiPackage className="h-6 w-6 text-gray-400" />
+                      </div>
                     )}
                     <div>
                       <p className="font-medium text-gray-900">
