@@ -41,13 +41,13 @@ const createAdmin = async () => {
 
     const admin = await User.create(adminData);
     
-    console.log('✅ Admin user created successfully!');
+    console.log(' Admin user created successfully!');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('Email: admin@evertrend.com');
     console.log('Password: admin123');
     console.log('Username: admin');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('⚠️  IMPORTANT: Change the password after first login!');
+    console.log(' IMPORTANT: Change the password after first login!');
     
     process.exit(0);
   } catch (error) {

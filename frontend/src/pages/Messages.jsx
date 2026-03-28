@@ -1,13 +1,27 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { FiMessageSquare, FiSend, FiArrowLeft, FiUser } from 'react-icons/fi';
 
 const Messages = () => {
   const { user } = useAuth();
-  const { conversationId } = useParams();
+  const { conversationId: conversationIdParam } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const conversationId = useMemo(
+    () => conversationIdParam || searchParams.get('conversationId') || '',
+    [conversationIdParam, searchParams]
+  );
+
+  const messagesBase = useMemo(() => {
+    return location.pathname.startsWith('/dashboard/buyer')
+      ? '/dashboard/buyer/messages'
+      : '/messages';
+  }, [location.pathname]);
+
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -17,32 +31,50 @@ const Messages = () => {
 
   useEffect(() => {
     if (!user) {
-      navigate('/login?redirect=/messages');
+      navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`);
       return;
     }
-    fetchConversations();
-  }, [user, navigate]);
+
+    const loadList = async () => {
+      try {
+        const response = await api.get('/conversations');
+        const list = response.data.data || [];
+        setConversations(list);
+
+        const fromQuery = new URLSearchParams(location.search).get('conversationId');
+        const pathMatch = location.pathname.match(/\/messages\/([^/]+)$/);
+        const pathId = pathMatch ? pathMatch[1] : null;
+        const activeId = pathId || fromQuery;
+
+        if (list.length > 0 && !activeId) {
+          navigate(`${messagesBase}/${list[0]._id}`, { replace: true });
+        }
+      } catch (error) {
+        console.error('Error fetching conversations:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadList();
+  }, [user, navigate, location.pathname, location.search]);
+
+  useEffect(() => {
+    const qid = searchParams.get('conversationId');
+    if (qid && !conversationIdParam) {
+      navigate(`${messagesBase}/${qid}`, { replace: true });
+    }
+  }, [searchParams, conversationIdParam, messagesBase, navigate]);
 
   useEffect(() => {
     if (conversationId) {
       fetchConversation(conversationId);
       fetchMessages(conversationId);
+    } else {
+      setSelectedConversation(null);
+      setMessages([]);
     }
   }, [conversationId]);
-
-  const fetchConversations = async () => {
-    try {
-      const response = await api.get('/conversations');
-      setConversations(response.data.data);
-      if (response.data.data.length > 0 && !conversationId) {
-        navigate(`/messages/${response.data.data[0]._id}`);
-      }
-    } catch (error) {
-      console.error('Error fetching conversations:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const fetchConversation = async (id) => {
     try {
@@ -72,9 +104,10 @@ const Messages = () => {
         conversationId: selectedConversation._id,
         content: newMessage.trim()
       });
-      setMessages([...messages, response.data.data]);
+      setMessages((prev) => [...prev, response.data.data]);
       setNewMessage('');
-      await fetchConversations(); // Refresh conversations to update last message timestamp
+      const convRes = await api.get('/conversations');
+      setConversations(convRes.data.data || []);
     } catch (error) {
       console.error('Error sending message:', error);
       alert('Failed to send message');
@@ -84,9 +117,14 @@ const Messages = () => {
   };
 
   const getOtherParticipant = (conversation) => {
-    if (!conversation.participants) return null;
-    return conversation.participants.find(p => p._id !== user._id);
+    if (!conversation?.participants || !user) return null;
+    return conversation.participants.find(
+      (p) => (p._id || p).toString() !== (user._id || user.id).toString()
+    );
   };
+
+  const isConvSelected = (c) =>
+    c._id === conversationId || c._id === conversationIdParam || c._id === searchParams.get('conversationId');
 
   if (!user) {
     return null;
@@ -116,7 +154,6 @@ const Messages = () => {
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Messages</h1>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
-          {/* Conversations List */}
           <div className="lg:col-span-1 bg-white rounded-lg shadow-md overflow-hidden flex flex-col">
             <div className="p-4 border-b border-gray-200">
               <h2 className="text-lg font-semibold">Conversations</h2>
@@ -134,9 +171,9 @@ const Messages = () => {
                     return (
                       <Link
                         key={conversation._id}
-                        to={`/messages/${conversation._id}`}
+                        to={`${messagesBase}/${conversation._id}`}
                         className={`block p-4 hover:bg-gray-50 transition ${
-                          conversationId === conversation._id ? 'bg-primary-50' : ''
+                          isConvSelected(conversation) ? 'bg-primary-50' : ''
                         }`}
                       >
                         <div className="flex items-center space-x-3">
@@ -164,11 +201,9 @@ const Messages = () => {
             </div>
           </div>
 
-          {/* Messages Area */}
           <div className="lg:col-span-2 bg-white rounded-lg shadow-md flex flex-col">
             {selectedConversation ? (
               <>
-                {/* Header */}
                 <div className="p-4 border-b border-gray-200">
                   {(() => {
                     const otherParticipant = getOtherParticipant(selectedConversation);
@@ -195,7 +230,6 @@ const Messages = () => {
                   })()}
                 </div>
 
-                {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   {messages.length === 0 ? (
                     <div className="text-center text-gray-500 py-8">
@@ -203,7 +237,8 @@ const Messages = () => {
                     </div>
                   ) : (
                     messages.map((message) => {
-                      const isOwnMessage = message.senderId._id === user._id;
+                      const senderId = message.senderId?._id || message.senderId;
+                      const isOwnMessage = senderId?.toString() === (user._id || user.id)?.toString();
                       return (
                         <div
                           key={message._id}
@@ -211,9 +246,7 @@ const Messages = () => {
                         >
                           <div
                             className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                              isOwnMessage
-                                ? 'text-white'
-                                : 'bg-gray-100 text-gray-900'
+                              isOwnMessage ? 'text-white' : 'bg-gray-100 text-gray-900'
                             }`}
                             style={isOwnMessage ? { backgroundColor: '#fab242' } : undefined}
                           >
@@ -232,7 +265,6 @@ const Messages = () => {
                   )}
                 </div>
 
-                {/* Message Input */}
                 <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200">
                   <div className="flex space-x-2">
                     <input
@@ -248,8 +280,12 @@ const Messages = () => {
                       disabled={!newMessage.trim() || sending}
                       className="px-6 py-2 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
                       style={{ backgroundColor: '#d4942e' }}
-                      onMouseOver={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#b87d20'; }}
-                      onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#d4942e'; }}
+                      onMouseOver={(e) => {
+                        if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#b87d20';
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.backgroundColor = '#d4942e';
+                      }}
                     >
                       <FiSend />
                       <span>Send</span>
@@ -273,4 +309,3 @@ const Messages = () => {
 };
 
 export default Messages;
-

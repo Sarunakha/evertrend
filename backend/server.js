@@ -21,6 +21,9 @@ import adminRoutes from './routes/admin.js';
 import refundRoutes from './routes/refundRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import vtoRoutes from './routes/vto.js';
+import contactRoutes from './routes/contactRoutes.js';
+import tryOnRoutes from './routes/tryOn.js';
 
 // Load environment variables
 dotenv.config();
@@ -64,6 +67,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/refunds', refundRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/vto', vtoRoutes);
+app.use('/api/contact', contactRoutes);
+app.use('/api/try-on', tryOnRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

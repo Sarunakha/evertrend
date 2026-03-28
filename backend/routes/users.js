@@ -1,9 +1,126 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import User from '../models/User.js';
+import LoyaltyPoints from '../models/LoyaltyPoints.js';
+import PointTransaction from '../models/PointTransaction.js';
+import Coupon from '../models/Coupon.js';
 import { protect, authorize, checkOwnership } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// @route   GET /api/users/measurements
+// @desc    Get current user's measurements (for simplified VTO)
+// @access  Private
+router.get('/measurements', protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('measurements bodyMeasurements');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const measurements =
+      user.measurements ||
+      (user.bodyMeasurements
+        ? {
+            height: user.bodyMeasurements.height ?? null,
+            chest: user.bodyMeasurements.chest ?? null,
+            waist: user.bodyMeasurements.waist ?? null
+          }
+        : null);
+
+    return res.json({ success: true, data: measurements });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// @route   POST /api/users/redeem-points
+// @desc    Redeem Trend Points into a single-use coupon for the user
+// @access  Private
+router.post(
+  '/redeem-points',
+  protect,
+  [
+    body('points').optional().isInt({ min: 1 }).withMessage('Points must be a positive integer'),
+    body('discountAmount').optional().isFloat({ min: 0.01 }).withMessage('Discount amount must be greater than 0')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      // Default offer: 500 points => Rs.100 off (as requested)
+      const points = req.body.points ? parseInt(req.body.points, 10) : 500;
+      const discountAmount = req.body.discountAmount ? parseFloat(req.body.discountAmount) : 50;
+
+      let loyaltyPoints = await LoyaltyPoints.findOne({ userId: req.user._id });
+      if (!loyaltyPoints) {
+        loyaltyPoints = await LoyaltyPoints.create({
+          userId: req.user._id,
+          totalPoints: 0,
+          lifetimePoints: 0
+        });
+      }
+
+      if (loyaltyPoints.totalPoints < points) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient points. You have ${loyaltyPoints.totalPoints} points, but need ${points} points.`
+        });
+      }
+
+      if (points < 500) {
+        return res.status(400).json({
+          success: false,
+          message: 'Minimum redemption is 500 points.'
+        });
+      }
+
+      const newBalance = await loyaltyPoints.redeemPoints(points);
+
+      const couponCode = `TREND${Date.now()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      const coupon = await Coupon.create({
+        code: couponCode,
+        type: 'fixed',
+        value: discountAmount,
+        description: `Redeemed ${points} TrendPoints for Rs.${discountAmount} discount`,
+        minPurchaseAmount: 0,
+        validFrom: new Date(),
+        validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+        usageLimit: 1,
+        isActive: true,
+        createdBy: req.user._id,
+        redeemedBy: req.user._id,
+        pointsCost: points
+      });
+
+      await PointTransaction.create({
+        userId: req.user._id,
+        points: -points,
+        type: 'redeemed',
+        reason: `Redeemed ${points} points for coupon ${couponCode}`,
+        referenceId: coupon._id,
+        referenceType: 'coupon',
+        balanceAfter: newBalance
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: `Redeemed ${points} points for a Rs.${discountAmount} discount coupon.`,
+        data: {
+          coupon: { code: coupon.code, discountAmount: coupon.value, validUntil: coupon.validUntil },
+          remainingPoints: newBalance
+        }
+      });
+    } catch (error) {
+      console.error('Redeem points (users) error:', error);
+      return res.status(500).json({ success: false, message: error.message || 'Error redeeming points' });
+    }
+  }
+);
 
 // @route   GET /api/users
 // @desc    Get all users (Admin only)

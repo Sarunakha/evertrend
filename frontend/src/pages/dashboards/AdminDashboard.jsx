@@ -1,14 +1,13 @@
 import { useState } from 'react';
 import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Shield, Activity, Flag, HardDrive, Users, Package, LogOut, ShoppingCart } from 'lucide-react';
+import { Shield, Users, Package, LogOut, ShoppingCart, MessageCircle } from 'lucide-react';
 import logo from '../../assets/logo1.png';
 import Overview from './admin/Overview';
 import UserManagement from './admin/UserManagement';
 import ProductModeration from './admin/ProductModeration';
-import ReportCenter from './admin/ReportCenter';
-import SystemMonitoring from './admin/SystemMonitoring';
 import AdminOrderList from './admin/AdminOrderList';
+import AdminUserMessages from './admin/AdminUserMessages';
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
@@ -20,8 +19,7 @@ const AdminDashboard = () => {
     { name: 'User Management', href: '/dashboard/admin/users', icon: Users },
     { name: 'Product Moderation', href: '/dashboard/admin/products', icon: Package },
     { name: 'Order Management', href: '/dashboard/admin/orders', icon: ShoppingCart },
-    { name: 'Report Center', href: '/dashboard/admin/reports', icon: Flag },
-    { name: 'System Monitoring', href: '/dashboard/admin/monitoring', icon: HardDrive },
+    { name: 'Messages from Users', href: '/dashboard/admin/messages', icon: MessageCircle },
   ];
 
   const handleLogout = async () => {
@@ -108,8 +106,7 @@ const AdminDashboard = () => {
             <Route path="users" element={<UserManagement />} />
             <Route path="products" element={<ProductModeration />} />
             <Route path="orders" element={<AdminOrderList />} />
-            <Route path="reports" element={<ReportCenter />} />
-            <Route path="monitoring" element={<SystemMonitoring />} />
+            <Route path="messages" element={<AdminUserMessages />} />
           </Routes>
         </main>
       </div>

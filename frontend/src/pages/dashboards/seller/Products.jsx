@@ -550,12 +550,22 @@ const Products = () => {
             <h3 className="font-semibold text-lg mb-2">{product.name}</h3>
             <p className="text-gray-600 text-sm mb-2">{product.category} • {product.size}</p>
             <p className="font-bold mb-2" style={{ color: '#fab242' }}>Rs.{product.price}</p>
-            <div className="flex items-center justify-between">
-              <span className={`px-2 py-1 rounded text-xs ${
-                product.isSold ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
-              }`}>
-                {product.isSold ? 'Sold' : 'Active'}
-              </span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1">
+                <span className={`px-2 py-1 rounded text-xs ${
+                  product.isSold ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                }`}>
+                  {product.isSold ? 'Sold' : 'Active'}
+                </span>
+                {product.flaggedForReview && (
+                  <span
+                    className="px-2 py-1 rounded text-xs bg-orange-100 text-orange-900"
+                    title="Hidden from the public shop until admin clears the flag"
+                  >
+                    Flagged
+                  </span>
+                )}
+              </div>
               <div className="space-x-2">
                 <button
                   onClick={() => handleEdit(product)}

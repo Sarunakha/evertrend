@@ -70,7 +70,7 @@ router.get('/stats', async (req, res) => {
     const soldProducts = await Product.countDocuments({ sellerId, isSold: true });
     const activeProducts = await Product.countDocuments({ sellerId, isSold: false });
 
-    // Get order statistics
+    // Get order statistics for this seller
     const orderItems = await OrderItem.find()
       .populate({
         path: 'productId',
@@ -78,19 +78,34 @@ router.get('/stats', async (req, res) => {
       })
       .populate('orderId');
 
-    const validOrderItems = orderItems.filter(item => item.productId);
+    const validOrderItems = orderItems.filter(item => item.productId && item.orderId);
 
-    // Calculate revenue
-    const totalRevenue = validOrderItems.reduce((sum, item) => {
-      return sum + (item.unitPrice * item.quantity);
-    }, 0);
+    // Unique orders involving this seller
+    const orderIds = [...new Set(validOrderItems.map(item => item.orderId._id.toString()))];
+    const orders = await Order.find({ _id: { $in: orderIds } });
+    const ordersById = new Map(orders.map(o => [o._id.toString(), o]));
 
-    // Get orders count
-    const orderIds = [...new Set(validOrderItems.map(item => item.orderId?._id.toString()))];
     const totalOrders = orderIds.length;
 
-    // Get orders by status
-    const orders = await Order.find({ _id: { $in: orderIds } });
+    // Revenue should count **only delivered** orders
+    const totalRevenue = validOrderItems.reduce((sum, item) => {
+      const order = ordersById.get(item.orderId._id.toString());
+      if (order && order.status === 'Delivered') {
+        return sum + item.unitPrice * item.quantity;
+      }
+      return sum;
+    }, 0);
+
+    // Lost revenue from cancelled / returned / cancellation requested
+    const lossStatuses = ['Cancelled', 'Returned', 'Cancellation Requested'];
+    const lostRevenue = validOrderItems.reduce((sum, item) => {
+      const order = ordersById.get(item.orderId._id.toString());
+      if (order && lossStatuses.includes(order.status)) {
+        return sum + item.unitPrice * item.quantity;
+      }
+      return sum;
+    }, 0);
+
     const pendingOrders = orders.filter(o => o.status === 'Pending').length;
     const shippedOrders = orders.filter(o => o.status === 'Shipped').length;
     const deliveredOrders = orders.filter(o => o.status === 'Delivered').length;
@@ -110,7 +125,8 @@ router.get('/stats', async (req, res) => {
           delivered: deliveredOrders
         },
         revenue: {
-          total: totalRevenue
+          total: totalRevenue,
+          lost: lostRevenue
         }
       }
     });

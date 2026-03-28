@@ -41,8 +41,10 @@ const ProductModeration = () => {
   const handleFlag = async (productId, flagged) => {
     try {
       const response = await api.put(`/admin/products/${productId}/flag`, { flagged });
-      if (response.data.success) {
-        fetchProducts();
+      if (response.data.success && response.data.data) {
+        setProducts((prev) =>
+          prev.map((p) => (p._id === productId ? { ...p, ...response.data.data } : p))
+        );
       }
     } catch (error) {
       console.error('Error flagging product:', error);
@@ -70,12 +72,16 @@ const ProductModeration = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center space-x-3">
           <Package className="h-6 w-6 text-gray-700" />
           <h2 className="text-2xl font-bold text-gray-900">Product Moderation</h2>
         </div>
       </div>
+      <p className="text-sm text-gray-600 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+        Flagged items are <span className="font-semibold">hidden from the public shop</span> until
+        unflagged. Sellers receive a notification when a product is flagged.
+      </p>
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-md p-4">
@@ -137,8 +143,11 @@ const ProductModeration = () => {
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="font-semibold text-gray-900 line-clamp-2">{product.name}</h3>
                   {product.flaggedForReview && (
-                    <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded">
-                      Flagged
+                    <span
+                      className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded"
+                      title="Not visible on Shop / All Products"
+                    >
+                      Flagged · hidden from shop
                     </span>
                   )}
                 </div>

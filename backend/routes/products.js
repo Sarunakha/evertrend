@@ -1,6 +1,8 @@
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import { body, validationResult } from 'express-validator';
 import Product from '../models/Product.js';
+import User from '../models/User.js';
 import { protect, authorize, checkOwnership } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -25,7 +27,7 @@ router.get('/', async (req, res) => {
       sellerId
     } = req.query;
 
-    const query = { isSold: false };
+    const query = { isSold: false, flaggedForReview: { $ne: true } };
 
     // Search
     if (search) {
@@ -95,6 +97,32 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    if (product.flaggedForReview) {
+      let allowed = false;
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer')) {
+        try {
+          const token = authHeader.split(' ')[1];
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          const user = await User.findById(decoded.id).select('role');
+          if (user) {
+            const sid = product.sellerId?._id || product.sellerId;
+            if (user.role === 'Admin' || sid?.toString() === user._id.toString()) {
+              allowed = true;
+            }
+          }
+        } catch {
+          allowed = false;
+        }
+      }
+      if (!allowed) {
+        return res.status(404).json({
+          success: false,
+          message: 'Product not found'
+        });
+      }
+    }
+
     res.json({
       success: true,
       data: product
@@ -116,8 +144,22 @@ router.post('/', protect, authorize('Seller', 'Admin'), [
   body('price').isFloat({ min: 0 }).withMessage('Valid price is required'),
   body('category').isIn(['Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Accessories', 'Shoes']),
   body('size').isIn(['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One Size']),
-  body('condition').isIn(['New', 'Like New', 'Good', 'Fair', 'Poor']),
-  body('stockQuantity').optional().isInt({ min: 0 })
+  body('condition').isIn(['New', 'Good', 'Fair', 'Poor']),
+  body('stockQuantity').optional().isInt({ min: 0 }),
+  body('vtoImage').optional().isString().trim(),
+  body('sizeChart').optional().isObject(),
+  body('sizeChart.S.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.S.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.S.shoulder').optional().isFloat({ min: 1 }),
+  body('sizeChart.M.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.M.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.M.shoulder').optional().isFloat({ min: 1 }),
+  body('sizeChart.L.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.L.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.L.shoulder').optional().isFloat({ min: 1 }),
+  body('sizeChart.XL.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.XL.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.XL.shoulder').optional().isFloat({ min: 1 })
 ], async (req, res, next) => {
   try {
     console.log('Received product creation request');
@@ -145,6 +187,8 @@ router.post('/', protect, authorize('Seller', 'Admin'), [
       stockQuantity: parseInt(req.body.stockQuantity) || 1,
       images: Array.isArray(req.body.images) ? req.body.images : [],
       dimensions: req.body.dimensions || {},
+      vtoImage: req.body.vtoImage || null,
+      sizeChart: req.body.sizeChart || null,
       sellerId: req.user._id
     };
 
@@ -224,7 +268,21 @@ router.put('/:id', protect, authorize('Seller', 'Admin'), checkOwnership(Product
   body('name').optional().trim().notEmpty(),
   body('description').optional().trim().notEmpty(),
   body('price').optional().isFloat({ min: 0 }),
-  body('stockQuantity').optional().isInt({ min: 0 })
+  body('stockQuantity').optional().isInt({ min: 0 }),
+  body('vtoImage').optional().isString().trim(),
+  body('sizeChart').optional().isObject(),
+  body('sizeChart.S.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.S.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.S.shoulder').optional().isFloat({ min: 1 }),
+  body('sizeChart.M.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.M.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.M.shoulder').optional().isFloat({ min: 1 }),
+  body('sizeChart.L.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.L.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.L.shoulder').optional().isFloat({ min: 1 }),
+  body('sizeChart.XL.chest').optional().isFloat({ min: 1 }),
+  body('sizeChart.XL.waist').optional().isFloat({ min: 1 }),
+  body('sizeChart.XL.shoulder').optional().isFloat({ min: 1 })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);

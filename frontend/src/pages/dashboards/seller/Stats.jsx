@@ -33,14 +33,25 @@ const Stats = () => {
 
   return (
     <div className="space-y-6">
-      {/* Revenue Card */}
-      <div className="rounded-lg shadow-md p-6 text-white" style={{ background: 'linear-gradient(to right, #fab242, #d19c49)' }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="mb-2" style={{ color: '#f1f3f9' }}>Total Revenue</p>
-            <p className="text-3xl font-bold">Rs. {stats.revenue.total.toFixed(2)}</p>
+      {/* Revenue Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-lg shadow-md p-6 text-white" style={{ background: 'linear-gradient(to right, #22c55e, #16a34a)' }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="mb-1 text-sm text-emerald-100">Total Revenue (Delivered)</p>
+              <p className="text-3xl font-bold">Rs. {stats.revenue.total.toFixed(2)}</p>
+            </div>
           </div>
-          <span className="text-4xl font-bold" style={{ color: '#f1f3f9' }}>Rs. </span>
+        </div>
+        <div className="rounded-lg shadow-md p-6 text-white bg-gradient-to-r from-rose-500 to-rose-400">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="mb-1 text-sm text-rose-100">Lost Revenue (Cancelled / Returned)</p>
+              <p className="text-3xl font-bold">
+                Rs. {stats.revenue.lost ? stats.revenue.lost.toFixed(2) : '0.00'}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

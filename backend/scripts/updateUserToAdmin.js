@@ -15,7 +15,7 @@ const updateUserToAdmin = async () => {
     const email = process.argv[2];
 
     if (!email) {
-      console.error('❌ Please provide an email address!');
+      console.error(' Please provide an email address!');
       console.log('Usage: npm run update-admin <email>');
       console.log('Example: npm run update-admin user@example.com');
       process.exit(1);
@@ -25,7 +25,7 @@ const updateUserToAdmin = async () => {
     const user = await User.findOne({ email: email.toLowerCase() });
 
     if (!user) {
-      console.error(`❌ User with email "${email}" not found!`);
+      console.error(` User with email "${email}" not found!`);
       process.exit(1);
     }
 
@@ -33,7 +33,7 @@ const updateUserToAdmin = async () => {
     user.role = 'Admin';
     await user.save();
 
-    console.log('✅ User updated to Admin successfully!');
+    console.log(' User updated to Admin successfully!');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('Email:', user.email);
     console.log('Username:', user.username);

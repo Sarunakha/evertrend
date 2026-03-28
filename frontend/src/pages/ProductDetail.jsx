@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { FiShoppingCart, FiHeart, FiUser, FiMessageSquare } from 'react-icons/fi';
-import VirtualTryOn from '../components/VirtualTryOn';
+import VirtualTryOnModal from '../components/VirtualTryOnModal';
 import ReviewList from '../components/ReviewList';
 import WriteReviewForm from '../components/WriteReviewForm';
 import api from '../utils/api';
@@ -54,6 +54,29 @@ const ProductDetail = () => {
       setProduct({ ...product, likesCount: response.data.data.likesCount });
     } catch (error) {
       console.error('Error liking product:', error);
+    }
+  };
+
+  const handleMessageSeller = async () => {
+    if (!user) {
+      navigate('/login?redirect=' + encodeURIComponent(`/products/${id}`));
+      return;
+    }
+    const sellerId = product.sellerId?._id || product.sellerId;
+    if (!sellerId || user._id === sellerId) return;
+
+    try {
+      const response = await api.post('/conversations/access', {
+        sellerId,
+        productId: product._id
+      });
+      const conv = response.data?.data;
+      if (conv?._id) {
+        navigate(`/dashboard/buyer/messages?conversationId=${conv._id}`);
+      }
+    } catch (error) {
+      console.error('Error opening conversation:', error);
+      alert(error.response?.data?.message || 'Failed to start conversation');
     }
   };
 
@@ -222,26 +245,21 @@ const ProductDetail = () => {
               </button>
             </div>
 
-            {user && product.dimensions && (
+            {/* Simplified VTO (uses product main image + sizeChart) */}
+            {user && product.sizeChart && (
               <button
                 onClick={() => setShowTryOn(true)}
-                className="w-full text-white px-6 py-3 rounded-md transition"
-                style={{ backgroundColor: '#fab242' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d19c49'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fab242'}
+                className="w-full px-6 py-3 rounded-md transition font-semibold text-white bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600"
               >
-                Virtual Try-On
+                Try It On Virtually
               </button>
             )}
-            {!user && product.dimensions && (
+            {!user && product.sizeChart && (
               <button
                 onClick={() => navigate('/login?redirect=' + encodeURIComponent('/virtual-try-on'))}
-                className="w-full text-white px-6 py-3 rounded-md transition"
-                style={{ backgroundColor: '#fab242' }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d19c49'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fab242'}
+                className="w-full px-6 py-3 rounded-md transition font-semibold text-white bg-gradient-to-r from-slate-900 to-slate-700 hover:from-slate-800 hover:to-slate-600"
               >
-                Login to Try Virtual Try-On
+                Login to Try It On
               </button>
             )}
 
@@ -253,18 +271,8 @@ const ProductDetail = () => {
                 </div>
                 {user && user._id !== product.sellerId._id && (
                   <button
-                    onClick={async () => {
-                      try {
-                        // Create or get conversation
-                        const response = await api.post('/conversations', {
-                          participantId: product.sellerId._id,
-                          productId: product._id
-                        });
-                      } catch (error) {
-                        console.error('Error creating conversation:', error);
-                        alert('Failed to start conversation');
-                      }
-                    }}
+                    type="button"
+                    onClick={handleMessageSeller}
                     className="w-full text-white px-4 py-2 rounded-md flex items-center justify-center space-x-2 transition"
                     style={{ backgroundColor: '#fab242' }}
                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#d19c49'}
@@ -284,10 +292,11 @@ const ProductDetail = () => {
         </div>
       </div>
 
-      {/* Virtual Try-On Modal */}
-      {showTryOn && (
-        <VirtualTryOn
+      {/* Simplified VTO Modal */}
+      {showTryOn && product && (
+        <VirtualTryOnModal
           product={product}
+          selectedSize={selectedSize}
           onClose={() => setShowTryOn(false)}
         />
       )}

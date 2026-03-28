@@ -26,6 +26,13 @@ export const protect = async (req, res, next) => {
         message: 'User not found'
       });
     }
+
+    if (req.user.status === 'Suspended' || req.user.isSuspended) {
+      return res.status(401).json({
+        success: false,
+        message: 'Your account has been suspended. Please contact admin at admin@evertrend.com.'
+      });
+    }
     
     next();
   } catch (error) {

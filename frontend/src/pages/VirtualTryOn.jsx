@@ -1,17 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import VirtualTryOn from '../components/VirtualTryOn';
 import api from '../utils/api';
 import { FiArrowLeft } from 'react-icons/fi';
 
 const VirtualTryOnPage = () => {
-  const [searchParams] = useSearchParams();
-  const productId = searchParams.get('product');
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [products, setProducts] = useState([]);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,7 +15,15 @@ const VirtualTryOnPage = () => {
       try {
         const response = await api.get('/products?limit=50');
         const data = response.data.data || [];
-        setProducts(data.filter((p) => p.dimensions && (p.dimensions.shoulder != null || p.dimensions.chest != null || p.dimensions.length != null)));
+        setProducts(
+          data.filter(
+            (p) =>
+              p.dimensions &&
+              (p.dimensions.shoulder != null ||
+                p.dimensions.chest != null ||
+                p.dimensions.length != null)
+          )
+        );
       } catch (error) {
         console.error('Error fetching products:', error);
       } finally {
@@ -29,15 +33,11 @@ const VirtualTryOnPage = () => {
     fetchProducts();
   }, []);
 
-  useEffect(() => {
-    if (productId && products.length > 0) {
-      const product = products.find((p) => p._id === productId);
-      if (product) {
-        setSelectedProduct(product);
-        setShowModal(true);
-      }
-    }
-  }, [productId, products]);
+  const goToBuyerTryOn = (product) => {
+    navigate(`/dashboard/buyer/try-on?productId=${product._id}`, {
+      state: { productId: product._id, vtoImage: product.vtoImage || null }
+    });
+  };
 
   if (!user) {
     return (
@@ -45,7 +45,7 @@ const VirtualTryOnPage = () => {
         <div className="text-center">
           <p className="text-gray-600 mb-4">Please log in to use Virtual Try-On.</p>
           <Link
-            to={`/login?redirect=${encodeURIComponent('/virtual-try-on')}`}
+            to={`/login?redirect=${encodeURIComponent('/dashboard/buyer/try-on')}`}
             className="inline-block px-6 py-2 text-white rounded-md font-medium"
             style={{ backgroundColor: '#fab242' }}
           >
@@ -90,10 +90,7 @@ const VirtualTryOnPage = () => {
                 <button
                   key={product._id}
                   type="button"
-                  onClick={() => {
-                    setSelectedProduct(product);
-                    setShowModal(true);
-                  }}
+                  onClick={() => goToBuyerTryOn(product)}
                   className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition text-left"
                 >
                   <div className="aspect-square bg-gray-100">
@@ -104,11 +101,14 @@ const VirtualTryOnPage = () => {
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           e.target.onerror = null;
-                          e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="400"%3E%3Crect fill="%23e5e7eb" width="400" height="400"/%3E%3C/svg%3E';
+                          e.target.src =
+                            'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="400"%3E%3Crect fill="%23e5e7eb" width="400" height="400"/%3E%3C/svg%3E';
                         }}
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-400">No image</div>
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        No image
+                      </div>
                     )}
                   </div>
                   <div className="p-4">
@@ -122,16 +122,6 @@ const VirtualTryOnPage = () => {
           </div>
         )}
       </div>
-
-      {showModal && selectedProduct && (
-        <VirtualTryOn
-          product={selectedProduct}
-          onClose={() => {
-            setShowModal(false);
-            setSelectedProduct(null);
-          }}
-        />
-      )}
     </div>
   );
 };

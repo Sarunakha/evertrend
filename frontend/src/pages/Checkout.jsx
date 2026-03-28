@@ -17,6 +17,10 @@ const Checkout = () => {
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [couponError, setCouponError] = useState('');
+  const [pointsBalance, setPointsBalance] = useState(null);
+  const [loadingPoints, setLoadingPoints] = useState(false);
+  const [redeemingPoints, setRedeemingPoints] = useState(false);
+  const [pointsMessage, setPointsMessage] = useState('');
   const [shippingAddress, setShippingAddress] = useState({
     street: '',
     city: '',
@@ -32,6 +36,23 @@ const Checkout = () => {
   }, [user, navigate]);
 
   useEffect(() => {
+    const fetchPoints = async () => {
+      if (!user) return;
+      try {
+        setLoadingPoints(true);
+        const res = await api.get('/loyalty/balance');
+        if (res.data?.success) setPointsBalance(res.data.data?.totalPoints ?? 0);
+      } catch (e) {
+        // non-blocking
+        console.error('Failed to load points balance', e);
+      } finally {
+        setLoadingPoints(false);
+      }
+    };
+    fetchPoints();
+  }, [user]);
+
+  useEffect(() => {
     if (user && cart && cart.items && cart.items.length === 0) {
       navigate('/cart');
     }
@@ -45,19 +66,14 @@ const Checkout = () => {
     }));
   };
 
-  const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) {
-      setCouponError('Please enter a coupon code');
-      return;
-    }
-
+  const applyCouponCode = async (code) => {
     try {
       setValidatingCoupon(true);
       setCouponError('');
       const total = getCartTotal();
 
       const response = await api.post('/coupons/validate', {
-        code: couponCode.trim().toUpperCase(),
+        code: String(code).trim().toUpperCase(),
         orderAmount: total
       });
 
@@ -75,10 +91,41 @@ const Checkout = () => {
     }
   };
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+    return applyCouponCode(couponCode);
+  };
+
   const handleRemoveCoupon = () => {
     setAppliedCoupon(null);
     setCouponCode('');
     setCouponError('');
+  };
+
+  const handleRedeemPoints = async () => {
+    try {
+      setRedeemingPoints(true);
+      setPointsMessage('');
+      setCouponError('');
+
+      const res = await api.post('/users/redeem-points', { points: 500, discountAmount: 50 });
+      const code = res.data?.data?.coupon?.code;
+      const remaining = res.data?.data?.remainingPoints;
+      if (typeof remaining === 'number') setPointsBalance(remaining);
+      if (!code) {
+        setPointsMessage('Redeemed points, but coupon code was not returned.');
+        return;
+      }
+      setPointsMessage(`Redeemed! Coupon ${code} applied.`);
+      await applyCouponCode(code);
+    } catch (e) {
+      setPointsMessage(e.response?.data?.message || 'Failed to redeem points.');
+    } finally {
+      setRedeemingPoints(false);
+    }
   };
 
 
@@ -254,6 +301,34 @@ const Checkout = () => {
                 <FiTag className="mr-2" />
                 Coupon Code
               </h2>
+
+              {/* Trend Points redemption */}
+              <div className="mb-4 bg-gray-50 border border-gray-200 rounded-md p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Trend Points</p>
+                    <p className="text-sm text-gray-600">
+                      {loadingPoints ? 'Loading…' : `Balance: ${pointsBalance ?? 0} points`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRedeemPoints}
+                    disabled={redeemingPoints || appliedCoupon != null}
+                    className="px-4 py-2 text-white rounded-md font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: '#fab242' }}
+                    onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#d19c49')}
+                    onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#fab242')}
+                    title={appliedCoupon ? 'Remove coupon to redeem points' : undefined}
+                  >
+                    {redeemingPoints ? 'Redeeming…' : 'Redeem 500 Points for Rs.50'}
+                  </button>
+                </div>
+                {pointsMessage && (
+                  <p className="mt-2 text-sm text-gray-700">{pointsMessage}</p>
+                )}
+              </div>
+
               {appliedCoupon ? (
                 <div className="bg-green-50 border border-green-200 rounded-md p-4">
                   <div className="flex items-center justify-between">

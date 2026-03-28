@@ -3,9 +3,14 @@ import { body, validationResult } from 'express-validator';
 import User from '../models/User.js';
 import Product from '../models/Product.js';
 import Order from '../models/Order.js';
+import OrderItem from '../models/OrderItem.js';
 import Report from '../models/Report.js';
 import Review from '../models/Review.js';
+import Message from '../models/Message.js';
+import Conversation from '../models/Conversation.js';
+import Notification from '../models/Notification.js';
 import { protect, adminMiddleware } from '../middleware/auth.js';
+import { sendEmail } from '../utils/sendEmail.js';
 
 const router = express.Router();
 
@@ -85,6 +90,90 @@ router.get('/overview', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error fetching overview data'
+    });
+  }
+});
+
+// @route   GET /api/admin/sales-report
+// @desc    Get monthly sales report: daily data, summary, top products
+// @access  Private/Admin
+// @query   month (1-12), year (e.g. 2025) — default: current month/year
+router.get('/sales-report', async (req, res) => {
+  try {
+    const now = new Date();
+    const year = parseInt(req.query.year, 10) || now.getFullYear();
+    const month = parseInt(req.query.month, 10) || now.getMonth() + 1;
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+
+    const matchMonth = {
+      createdAt: { $gte: start, $lt: end },
+      status: { $nin: ['Cancelled'] }
+    };
+
+    const [dailyAgg, summaryAgg, topProductsAgg] = await Promise.all([
+      Order.aggregate([
+        { $match: matchMonth },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            revenue: { $sum: '$totalAmount' },
+            orders: { $sum: 1 }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ]),
+      Order.aggregate([
+        { $match: matchMonth },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: '$totalAmount' },
+            totalOrders: { $sum: 1 }
+          }
+        }
+      ]),
+      Order.aggregate([
+        { $match: matchMonth },
+        { $lookup: { from: 'orderitems', localField: '_id', foreignField: 'orderId', as: 'items' } },
+        { $unwind: '$items' },
+        { $group: { _id: '$items.productId', quantitySold: { $sum: '$items.quantity' } } },
+        { $sort: { quantitySold: -1 } },
+        { $limit: 3 },
+        { $lookup: { from: 'products', localField: '_id', foreignField: '_id', as: 'product' } },
+        { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+        { $project: { productId: '$_id', name: '$product.name', quantitySold: 1, _id: 0 } }
+      ])
+    ]);
+
+    const totalRevenue = summaryAgg[0]?.totalRevenue ?? 0;
+    const totalOrders = summaryAgg[0]?.totalOrders ?? 0;
+    const dailyData = dailyAgg.map((d) => ({
+      date: d._id,
+      revenue: d.revenue,
+      orders: d.orders
+    }));
+    const topProducts = topProductsAgg.map((p) => ({
+      productId: p.productId,
+      name: p.name || 'Unknown Product',
+      quantitySold: p.quantitySold
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        month,
+        year,
+        summary: { totalRevenue, totalOrders },
+        dailyData,
+        topProducts
+      }
+    });
+  } catch (error) {
+    console.error('Admin sales-report error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching sales report'
     });
   }
 });
@@ -196,7 +285,10 @@ router.put('/users/:id/suspend', [
     const { suspended } = req.body;
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { isSuspended: suspended },
+      {
+        isSuspended: suspended,
+        status: suspended ? 'Suspended' : 'Active'
+      },
       { new: true, runValidators: true }
     ).select('-password');
 
@@ -293,6 +385,18 @@ router.put('/products/:id/flag', [
       return res.status(404).json({
         success: false,
         message: 'Product not found'
+      });
+    }
+
+    if (flagged && product.sellerId) {
+      const sellerId = product.sellerId._id || product.sellerId;
+      await Notification.create({
+        recipientId: sellerId,
+        senderId: null,
+        type: 'PRODUCT_FLAGGED',
+        message: `Your product "${product.name}" has been flagged by the admin. Please review our community guidelines or contact support.`,
+        relatedId: product._id,
+        isRead: false
       });
     }
 
@@ -511,6 +615,169 @@ router.get('/monitor', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error fetching monitoring data'
+    });
+  }
+});
+
+// @route   GET /api/admin/messages
+// @desc    Get all messages sent to admin (contact form + direct chat)
+// @access  Private/Admin
+router.get('/messages', async (req, res) => {
+  try {
+    const adminId = req.user._id;
+
+    const contactMessages = await Message.find({
+      type: 'contact_form',
+      receiverId: adminId
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const adminConversations = await Conversation.find({
+      participants: adminId
+    })
+      .select('_id')
+      .lean();
+    const convIds = adminConversations.map((c) => c._id);
+
+    const directMessages = await Message.find({
+      type: 'chat',
+      conversationId: { $in: convIds },
+      senderId: { $ne: adminId }
+    })
+      .populate('senderId', 'username email')
+      .sort({ timestamp: -1 })
+      .lean();
+
+    const contactList = contactMessages.map((m) => ({
+      _id: m._id,
+      source: 'contact_form',
+      senderName: m.senderName,
+      senderEmail: m.senderEmail,
+      subject: m.subject,
+      content: m.content,
+      contactStatus: m.contactStatus,
+      date: m.createdAt || m.timestamp,
+      isRead: m.isRead
+    }));
+
+    const directList = directMessages.map((m) => ({
+      _id: m._id,
+      source: 'chat',
+      senderName: m.senderId?.username || m.senderId?.email || 'Unknown',
+      senderEmail: m.senderId?.email || '',
+      subject: null,
+      content: m.content,
+      conversationId: m.conversationId,
+      date: m.timestamp || m.createdAt,
+      isRead: m.isRead
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        contactMessages: contactList,
+        directMessages: directList
+      }
+    });
+  } catch (error) {
+    console.error('Admin messages error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching messages'
+    });
+  }
+});
+
+// @route   PATCH /api/admin/messages/:id
+// @desc    Mark contact form message as resolved (or mark as read)
+// @access  Private/Admin
+router.patch('/messages/:id', [
+  body('contactStatus').optional().isIn(['pending', 'resolved']).withMessage('Invalid status'),
+  body('isRead').optional().isBoolean().withMessage('isRead must be boolean')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+    const msg = await Message.findOne({
+      _id: req.params.id,
+      type: 'contact_form',
+      receiverId: req.user._id
+    });
+    if (!msg) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found'
+      });
+    }
+    if (req.body.contactStatus) msg.contactStatus = req.body.contactStatus;
+    if (typeof req.body.isRead === 'boolean') msg.isRead = req.body.isRead;
+    await msg.save();
+    return res.json({
+      success: true,
+      message: 'Message updated',
+      data: msg
+    });
+  } catch (error) {
+    console.error('Admin message update error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error updating message'
+    });
+  }
+});
+
+// @route   POST /api/admin/messages/:id/reply
+// @desc    Send reply email to contact form sender
+// @access  Private/Admin
+router.post('/messages/:id/reply', [
+  body('replyText').trim().notEmpty().withMessage('Reply content is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: errors.array()[0]?.msg || 'Reply content is required'
+      });
+    }
+    const msg = await Message.findOne({
+      _id: req.params.id,
+      type: 'contact_form',
+      receiverId: req.user._id
+    }).lean();
+    if (!msg) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found'
+      });
+    }
+    const toEmail = msg.senderEmail;
+    if (!toEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'No sender email to reply to'
+      });
+    }
+    const replyText = req.body.replyText.trim();
+    const subject = msg.subject ? `Re: ${msg.subject}` : 'Re: Your message to EverTrend';
+    await sendEmail({
+      email: toEmail,
+      subject,
+      message: replyText,
+      html: replyText.replace(/\n/g, '<br>')
+    });
+    return res.json({
+      success: true,
+      message: 'Reply sent successfully'
+    });
+  } catch (error) {
+    console.error('Admin reply error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.response?.data?.message || error.message || 'Error sending reply'
     });
   }
 });
