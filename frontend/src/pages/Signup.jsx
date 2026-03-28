@@ -168,7 +168,7 @@ const Signup = () => {
             <p className="mt-2 text-gray-600">
               {isOtpSent 
                 ? 'Enter the verification code sent to your email to complete registration.'
-                : 'Please enter your details to get started. We'll send you a verification code.'}
+                : "Please enter your details to get started. We'll send you a verification code."}
             </p>
           </div>
 
