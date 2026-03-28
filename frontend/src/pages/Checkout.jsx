@@ -1,0 +1,502 @@
+import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useCart } from '../context/CartContext';
+import EsewaPayment from '../components/EsewaPayment';
+import { FiArrowLeft, FiMapPin, FiCreditCard, FiTag, FiX } from 'react-icons/fi';
+import api from '../utils/api';
+
+const Checkout = () => {
+  const { user } = useAuth();
+  const { cart, getCartTotal, fetchCart, clearCart } = useCart();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('eSewa');
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState('');
+  const [pointsBalance, setPointsBalance] = useState(null);
+  const [loadingPoints, setLoadingPoints] = useState(false);
+  const [redeemingPoints, setRedeemingPoints] = useState(false);
+  const [pointsMessage, setPointsMessage] = useState('');
+  const [shippingAddress, setShippingAddress] = useState({
+    street: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: 'Nepal'
+  });
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/login?redirect=/checkout');
+    }
+  }, [user, navigate]);
+
+  useEffect(() => {
+    const fetchPoints = async () => {
+      if (!user) return;
+      try {
+        setLoadingPoints(true);
+        const res = await api.get('/loyalty/balance');
+        if (res.data?.success) setPointsBalance(res.data.data?.totalPoints ?? 0);
+      } catch (e) {
+        // non-blocking
+        console.error('Failed to load points balance', e);
+      } finally {
+        setLoadingPoints(false);
+      }
+    };
+    fetchPoints();
+  }, [user]);
+
+  useEffect(() => {
+    if (user && cart && cart.items && cart.items.length === 0) {
+      navigate('/cart');
+    }
+  }, [user, cart, navigate]);
+
+  const handleAddressChange = (e) => {
+    const { name, value } = e.target;
+    setShippingAddress(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const applyCouponCode = async (code) => {
+    try {
+      setValidatingCoupon(true);
+      setCouponError('');
+      const total = getCartTotal();
+
+      const response = await api.post('/coupons/validate', {
+        code: String(code).trim().toUpperCase(),
+        orderAmount: total
+      });
+
+      if (response.data.success) {
+        setAppliedCoupon(response.data.data);
+        setCouponCode('');
+      } else {
+        setCouponError(response.data.message || 'Invalid coupon code');
+      }
+    } catch (error) {
+      console.error('Coupon validation error:', error);
+      setCouponError(error.response?.data?.message || 'Failed to validate coupon. Please try again.');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError('Please enter a coupon code');
+      return;
+    }
+    return applyCouponCode(couponCode);
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    setCouponError('');
+  };
+
+  const handleRedeemPoints = async () => {
+    try {
+      setRedeemingPoints(true);
+      setPointsMessage('');
+      setCouponError('');
+
+      const res = await api.post('/users/redeem-points', { points: 500, discountAmount: 50 });
+      const code = res.data?.data?.coupon?.code;
+      const remaining = res.data?.data?.remainingPoints;
+      if (typeof remaining === 'number') setPointsBalance(remaining);
+      if (!code) {
+        setPointsMessage('Redeemed points, but coupon code was not returned.');
+        return;
+      }
+      setPointsMessage(`Redeemed! Coupon ${code} applied.`);
+      await applyCouponCode(code);
+    } catch (e) {
+      setPointsMessage(e.response?.data?.message || 'Failed to redeem points.');
+    } finally {
+      setRedeemingPoints(false);
+    }
+  };
+
+
+  const handleCashOnDelivery = async () => {
+    if (!cart || !cart.items || cart.items.length === 0) {
+      setError('Your cart is empty');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const orderItems = cart.items.map(item => ({
+        productId: item.productId._id || item.productId,
+        quantity: item.quantity
+      }));
+
+      const response = await api.post('/orders', {
+        items: orderItems,
+        paymentMethod: 'Cash on Delivery',
+        shippingAddress: shippingAddress,
+        couponCode: appliedCoupon?.coupon?.code || null
+      });
+
+      if (response.data.success) {
+        await clearCart();
+        navigate('/payment/success', { 
+          state: { order: response.data.data } 
+        });
+      } else {
+        throw new Error(response.data.message || 'Failed to create order');
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      setError(error.response?.data?.message || error.message || 'Failed to process checkout. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  if (!user) {
+    return null;
+  }
+
+  if (!cart || !cart.items || cart.items.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-4">Your cart is empty</h2>
+          <Link
+            to="/cart"
+            className="inline-block px-6 py-3 text-white rounded-md font-semibold transition"
+            style={{ backgroundColor: '#fab242' }}
+          >
+            Go to Cart
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const cartItems = cart.items || [];
+  const subtotal = getCartTotal();
+  const discount = appliedCoupon?.discount || 0;
+  const total = subtotal - discount;
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mb-6">
+          <Link
+            to="/cart"
+            className="inline-flex items-center text-gray-600 hover:text-gray-900"
+          >
+            <FiArrowLeft className="mr-2" />
+            Back to Cart
+          </Link>
+        </div>
+
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">Checkout</h1>
+
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+            {error}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Checkout Form */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Shipping Address */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+                <FiMapPin className="mr-2" />
+                Shipping Address
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Street Address
+                  </label>
+                  <input
+                    type="text"
+                    name="street"
+                    value={shippingAddress.street}
+                    onChange={handleAddressChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    placeholder="Enter street address"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      City
+                    </label>
+                    <input
+                      type="text"
+                      name="city"
+                      value={shippingAddress.city}
+                      onChange={handleAddressChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      placeholder="City"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      State/Province
+                    </label>
+                    <input
+                      type="text"
+                      name="state"
+                      value={shippingAddress.state}
+                      onChange={handleAddressChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      placeholder="State"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      ZIP Code
+                    </label>
+                    <input
+                      type="text"
+                      name="zipCode"
+                      value={shippingAddress.zipCode}
+                      onChange={handleAddressChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      placeholder="ZIP Code"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Country
+                    </label>
+                    <input
+                      type="text"
+                      name="country"
+                      value={shippingAddress.country}
+                      onChange={handleAddressChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      placeholder="Country"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Coupon Code */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+                <FiTag className="mr-2" />
+                Coupon Code
+              </h2>
+
+              {/* Trend Points redemption */}
+              <div className="mb-4 bg-gray-50 border border-gray-200 rounded-md p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">Trend Points</p>
+                    <p className="text-sm text-gray-600">
+                      {loadingPoints ? 'Loading…' : `Balance: ${pointsBalance ?? 0} points`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRedeemPoints}
+                    disabled={redeemingPoints || appliedCoupon != null}
+                    className="px-4 py-2 text-white rounded-md font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: '#fab242' }}
+                    onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#d19c49')}
+                    onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#fab242')}
+                    title={appliedCoupon ? 'Remove coupon to redeem points' : undefined}
+                  >
+                    {redeemingPoints ? 'Redeeming…' : 'Redeem 500 Points for Rs.50'}
+                  </button>
+                </div>
+                {pointsMessage && (
+                  <p className="mt-2 text-sm text-gray-700">{pointsMessage}</p>
+                )}
+              </div>
+
+              {appliedCoupon ? (
+                <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-green-800">
+                        Coupon Applied: {appliedCoupon.coupon.code}
+                      </p>
+                      <p className="text-sm text-green-600">
+                        You saved Rs.{discount.toFixed(2)}!
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleRemoveCoupon}
+                      className="text-green-600 hover:text-green-800"
+                      title="Remove coupon"
+                    >
+                      <FiX className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={couponCode}
+                      onChange={(e) => {
+                        setCouponCode(e.target.value.toUpperCase());
+                        setCouponError('');
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyCoupon();
+                        }
+                      }}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-orange-500 focus:border-transparent uppercase"
+                      placeholder="Enter coupon code"
+                    />
+                    <button
+                      onClick={handleApplyCoupon}
+                      disabled={validatingCoupon || !couponCode.trim()}
+                      className="px-6 py-2 text-white rounded-md font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ backgroundColor: '#fab242' }}
+                      onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#d19c49')}
+                      onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.backgroundColor = '#fab242')}
+                    >
+                      {validatingCoupon ? 'Applying...' : 'Apply'}
+                    </button>
+                  </div>
+                  {couponError && (
+                    <p className="text-sm text-red-600">{couponError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Payment Method */}
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+                <FiCreditCard className="mr-2" />
+                Payment Method
+              </h2>
+              <div className="space-y-3">
+                <label className="flex items-center p-4 border-2 border-gray-200 rounded-md cursor-pointer hover:border-primary-500 transition">
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="eSewa"
+                    checked={paymentMethod === 'eSewa'}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="mr-3"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900">eSewa</span>
+                    <p className="text-sm text-gray-600">Pay securely with eSewa</p>
+                  </div>
+                </label>
+                <label className="flex items-center p-4 border-2 border-gray-200 rounded-md cursor-pointer hover:border-primary-500 transition">
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="Cash on Delivery"
+                    checked={paymentMethod === 'Cash on Delivery'}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="mr-3"
+                  />
+                  <div>
+                    <span className="font-semibold text-gray-900">Cash on Delivery</span>
+                    <p className="text-sm text-gray-600">Pay when you receive your order</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Order Summary */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-md p-6 sticky top-4">
+              <h2 className="text-xl font-semibold text-gray-900 mb-6">Order Summary</h2>
+              
+              <div className="space-y-4 mb-6">
+                {cartItems.map((item) => {
+                  const product = item.productId;
+                  if (!product) return null;
+                  return (
+                    <div key={item._id} className="flex justify-between text-sm">
+                      <span className="text-gray-600">
+                        {product.name} x {item.quantity}
+                      </span>
+                      <span className="text-gray-900 font-medium">
+                        Rs.{(product.price * item.quantity).toFixed(2)}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="border-t border-gray-200 pt-4 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Subtotal</span>
+                    <span className="text-gray-900">Rs.{subtotal.toFixed(2)}</span>
+                  </div>
+                  {discount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-green-600">Discount</span>
+                      <span className="text-green-600 font-semibold">-Rs.{discount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-gray-200 pt-2">
+                    <div className="flex justify-between text-lg font-semibold text-gray-900">
+                      <span>Total</span>
+                      <span>Rs.{total.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {paymentMethod === 'eSewa' ? (
+                <EsewaPayment
+                  amount={total}
+                  products={cartItems.map(item => ({
+                    productId: item.productId?._id || item.productId,
+                    quantity: item.quantity,
+                    _id: item._id
+                  }))}
+                  shippingAddress={shippingAddress}
+                  couponCode={appliedCoupon?.coupon?.code || null}
+                  onError={setError}
+                  onLoading={setLoading}
+                />
+              ) : (
+                <button
+                  onClick={handleCashOnDelivery}
+                  disabled={loading}
+                  className="w-full px-6 py-3 bg-primary-600 text-white rounded-md font-semibold transition hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: '#fab242' }}
+                  onMouseEnter={(e) => !loading && (e.currentTarget.style.backgroundColor = '#d19c49')}
+                  onMouseLeave={(e) => !loading && (e.currentTarget.style.backgroundColor = '#fab242')}
+                >
+                  {loading ? 'Processing...' : 'Place Order'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Checkout;
+
