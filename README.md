@@ -76,7 +76,7 @@ npm install
 cp .env.example .env
 ```
 
-4. Update `.env` with your MongoDB connection string and JWT secret:
+4. Update `.env` with your configuration:
 ```env
 PORT=5000
 NODE_ENV=development
@@ -84,7 +84,24 @@ MONGODB_URI=your_mongodb_connection_string
 JWT_SECRET=your_secret_key
 JWT_EXPIRE=7d
 CLUSTER_WORKERS=4
+
+# Email Configuration (Required for OTP verification)
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_app_password_here
+EMAIL_FROM=noreply@evertrend.com
+EMAIL_FROM_NAME=EverTrend
+FRONTEND_URL=http://localhost:3000
 ```
+
+**Important for Email Setup:**
+- For Gmail: You must use an **App Password**, not your regular password
+  1. Go to Google Account > Security > 2-Step Verification
+  2. Generate an App Password
+  3. Use that App Password in `EMAIL_PASS`
+- For other email providers, adjust `EMAIL_HOST` accordingly (e.g., `smtp.sendgrid.net` for SendGrid)
 
 5. Start the server:
 ```bash
