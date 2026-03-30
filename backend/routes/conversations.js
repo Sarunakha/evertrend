@@ -1,9 +1,85 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Conversation from '../models/Conversation.js';
-import Message from '../models/Message.js';
+import User from '../models/User.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// @route   POST /api/conversations/access
+// @desc    Find or create a conversation between the current user (buyer) and a seller
+// @access  Private
+router.post('/access', protect, async (req, res) => {
+  try {
+    const { sellerId, productId } = req.body;
+
+    if (!sellerId) {
+      return res.status(400).json({
+        success: false,
+        message: 'sellerId is required'
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(sellerId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid seller ID'
+      });
+    }
+
+    const buyerId = req.user._id;
+    if (sellerId.toString() === buyerId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot message yourself'
+      });
+    }
+
+    const seller = await User.findById(sellerId).select('_id');
+    if (!seller) {
+      return res.status(404).json({
+        success: false,
+        message: 'Seller not found'
+      });
+    }
+
+    const productObjectId =
+      productId && mongoose.Types.ObjectId.isValid(productId) ? productId : null;
+
+    const matchQuery = {
+      participants: { $all: [buyerId, sellerId] }
+    };
+    if (productObjectId) {
+      matchQuery.productId = productObjectId;
+    }
+
+    let conversation = await Conversation.findOne(matchQuery)
+      .populate('participants', 'username email')
+      .populate('productId', 'name images price');
+
+    if (!conversation) {
+      conversation = await Conversation.create({
+        participants: [buyerId, sellerId],
+        productId: productObjectId
+      });
+      await conversation.populate('participants', 'username email');
+      if (productObjectId) {
+        await conversation.populate('productId', 'name images price');
+      }
+    }
+
+    res.json({
+      success: true,
+      data: conversation
+    });
+  } catch (error) {
+    console.error('Conversation access error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error accessing conversation'
+    });
+  }
+});
 
 // @route   GET /api/conversations
 // @desc    Get all conversations for the current user

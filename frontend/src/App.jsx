@@ -13,7 +13,7 @@ import VerifyEmail from './pages/VerifyEmail';
 import Products from './pages/Products';
 import ProductDetail from './pages/ProductDetail';
 import About from './pages/About';
-import Contact from './pages/Contact';
+import ContactUs from './pages/ContactUs';
 import VirtualTryOnPage from './pages/VirtualTryOn';
 import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
@@ -42,7 +42,7 @@ const AppContent = () => {
             <Route path="/products" element={<Products />} />
             <Route path="/products/:id" element={<ProductDetail />} />
             <Route path="/about" element={<About />} />
-            <Route path="/contact" element={<Contact />} />
+            <Route path="/contact" element={<ContactUs />} />
             <Route path="/virtual-try-on" element={<VirtualTryOnPage />} />
             <Route path="/cart" element={<Cart />} />
             <Route path="/checkout" element={<Checkout />} />

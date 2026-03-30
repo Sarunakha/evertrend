@@ -106,6 +106,15 @@ export const AuthProvider = ({ children }) => {
         };
       }
 
+      if (error.response.status === 403) {
+        return {
+          success: false,
+          message: errorMessage,
+          accountSuspended:
+            typeof errorMessage === 'string' && errorMessage.toLowerCase().includes('suspended')
+        };
+      }
+
       // Handle validation errors
       if (error.response.status === 400 && errorData.errors && Array.isArray(errorData.errors)) {
         const errorMessages = errorData.errors.map(err => err.msg || err.message || (err.param ? `${err.param}: ${err.msg}` : 'Validation error')).join(', ');

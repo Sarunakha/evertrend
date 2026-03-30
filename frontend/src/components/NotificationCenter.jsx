@@ -75,6 +75,8 @@ const NotificationCenter = () => {
       navigate('/dashboard/admin/orders');
     } else if (notification.type === 'ORDER_CANCELLATION_UPDATE') {
       navigate('/dashboard/buyer/orders');
+    } else if (notification.type === 'PRODUCT_FLAGGED') {
+      navigate('/dashboard/seller/products');
     } else if (notification.relatedId) {
       if (notification.type === 'REFUND_UPDATE' || notification.type === 'REFUND_REQUEST') {
         navigate('/dashboard/buyer/orders');

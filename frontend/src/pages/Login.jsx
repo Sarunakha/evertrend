@@ -80,6 +80,13 @@ const Login = () => {
         // Don't navigate immediately - let useEffect handle it after animation
       } else {
         setLoading(false);
+        if (result.accountSuspended) {
+          setError(
+            result.message ||
+              'Your account has been suspended. Please contact admin at admin@evertrend.com.'
+          );
+          return;
+        }
         // Check if error is about email verification
         if (result.requiresVerification) {
           setRequiresVerification(true);

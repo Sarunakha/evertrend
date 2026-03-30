@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Shield, Activity, Flag, HardDrive } from 'lucide-react';
 import api from '../../../utils/api';
+import MonthlySalesReport from './MonthlySalesReport';
 
 const Overview = () => {
   const [stats, setStats] = useState(null);
@@ -117,6 +118,9 @@ const Overview = () => {
           );
         })}
       </div>
+
+      {/* Monthly Sales Report */}
+      <MonthlySalesReport />
 
       {/* Recent Activity Feed */}
       <div className="bg-white rounded-xl shadow-md p-6">

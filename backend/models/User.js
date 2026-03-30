@@ -7,6 +7,21 @@ const sizeProfileSchema = new mongoose.Schema({
   length: { type: Number }
 }, { _id: false });
 
+const bodyMeasurementsSchema = new mongoose.Schema({
+  height: { type: Number }, // cm or inches (keep consistent in UI)
+  chest: { type: Number },
+  waist: { type: Number },
+  hips: { type: Number },
+  shoulderWidth: { type: Number }
+}, { _id: false });
+
+// Simplified measurements used by ProductDetails VTO
+const measurementsSchema = new mongoose.Schema({
+  height: { type: Number },
+  chest: { type: Number },
+  waist: { type: Number }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -46,6 +61,14 @@ const userSchema = new mongoose.Schema({
     type: sizeProfileSchema,
     default: null
   },
+  bodyMeasurements: {
+    type: bodyMeasurementsSchema,
+    default: null
+  },
+  measurements: {
+    type: measurementsSchema,
+    default: null
+  },
   followers: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -63,6 +86,13 @@ const userSchema = new mongoose.Schema({
   isSuspended: {
     type: Boolean,
     default: false,
+    index: true
+  },
+  /** Kept in sync with isSuspended for API clarity ('Active' | 'Suspended'). */
+  status: {
+    type: String,
+    enum: ['Active', 'Suspended'],
+    default: 'Active',
     index: true
   },
   verificationToken: String,

@@ -4,8 +4,10 @@ import { useAuth } from '../../context/AuthContext';
 import Profile from './buyer/Profile';
 import Orders from './buyer/Orders';
 import Points from './buyer/Points';
-import Chat from './buyer/Chat';
+import Messages from '../Messages';
+import VirtualTryOn from './buyer/VirtualTryOn';
 import { FiUser, FiPackage, FiStar, FiMessageSquare } from 'react-icons/fi';
+import { Sparkles } from 'lucide-react';
 
 const BuyerDashboard = () => {
   const { user } = useAuth();
@@ -15,7 +17,8 @@ const BuyerDashboard = () => {
     { name: 'Profile', href: '/dashboard/buyer/profile', icon: FiUser },
     { name: 'Orders', href: '/dashboard/buyer/orders', icon: FiPackage },
     { name: 'TrendPoints', href: '/dashboard/buyer/points', icon: FiStar },
-    { name: 'Messages', href: '/dashboard/buyer/chat', icon: FiMessageSquare },
+    { name: 'Virtual Try‑On', href: '/dashboard/buyer/try-on', icon: Sparkles },
+    { name: 'Messages', href: '/dashboard/buyer/messages', icon: FiMessageSquare },
   ];
 
   return (
@@ -33,7 +36,10 @@ const BuyerDashboard = () => {
               <ul className="space-y-2">
                 {navigation.map((item) => {
                   const Icon = item.icon;
-                  const isActive = location.pathname === item.href;
+                  const isActive =
+                    item.href === '/dashboard/buyer/messages'
+                      ? location.pathname.startsWith('/dashboard/buyer/messages')
+                      : location.pathname === item.href;
                   return (
                     <li key={item.name}>
                       <Link
@@ -61,7 +67,9 @@ const BuyerDashboard = () => {
               <Route path="profile" element={<Profile />} />
               <Route path="orders" element={<Orders />} />
               <Route path="points" element={<Points />} />
-              <Route path="chat" element={<Chat />} />
+              <Route path="try-on" element={<VirtualTryOn />} />
+              <Route path="messages/:conversationId" element={<Messages />} />
+              <Route path="messages" element={<Messages />} />
               <Route path="" element={<Profile />} />
             </Routes>
           </div>

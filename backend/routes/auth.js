@@ -357,7 +357,7 @@ router.post('/register', [
     });
 
     // Send verification email with OTP
-    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3002'}/verify-email?token=${verificationToken}`;
     
     let emailSent = false;
     let emailPreviewUrl = null;
@@ -529,6 +529,13 @@ router.post('/login', [
       });
     }
 
+    if (user.status === 'Suspended' || user.isSuspended) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended. Please contact admin at admin@evertrend.com'
+      });
+    }
+
     // Check if email is verified (skip for Admin users)
     if (!user.isVerified && user.role !== 'Admin') {
       return res.status(403).json({
@@ -604,7 +611,7 @@ router.post('/forgot-password', [
     await user.save({ validateBeforeSave: false });
 
     // Send password reset email
-    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3002'}/reset-password?token=${resetToken}`;
     
     try {
       await sendEmail({
@@ -788,7 +795,7 @@ router.post('/resend-verification', [
     await user.save({ validateBeforeSave: false });
 
     // Send verification email
-    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3002'}/verify-email?token=${verificationToken}`;
     
     let emailSent = false;
     let emailPreviewUrl = null;
@@ -993,6 +1000,12 @@ router.post('/google', [
     });
 
     if (user) {
+      if (user.status === 'Suspended' || user.isSuspended) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been suspended. Please contact admin at admin@evertrend.com.'
+        });
+      }
       // Update user with Google ID if not set
       if (!user.googleId) {
         user.googleId = googleId;

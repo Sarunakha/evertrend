@@ -15,7 +15,7 @@ const notificationSchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['REFUND_UPDATE', 'NEW_COUPON', 'ORDER_STATUS', 'ORDER_UPDATE', 'REFUND_REQUEST', 'NEW_MESSAGE', 'ORDER_CANCELLATION_REQUEST', 'ORDER_CANCELLATION_UPDATE', 'GENERAL'],
+    enum: ['REFUND_UPDATE', 'NEW_COUPON', 'ORDER_STATUS', 'ORDER_UPDATE', 'REFUND_REQUEST', 'NEW_MESSAGE', 'ORDER_CANCELLATION_REQUEST', 'ORDER_CANCELLATION_UPDATE', 'GENERAL', 'CONTACT_FORM', 'PRODUCT_FLAGGED'],
     index: true
   },
   message: {

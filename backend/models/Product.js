@@ -1,5 +1,20 @@
 import mongoose from 'mongoose';
 
+const sizeChartEntrySchema = new mongoose.Schema({
+  chest: { type: Number },
+  waist: { type: Number },
+  shoulder: { type: Number },
+  hips: { type: Number },
+  shoulderWidth: { type: Number }
+}, { _id: false });
+
+const sizeChartSchema = new mongoose.Schema({
+  S: { type: sizeChartEntrySchema, default: null },
+  M: { type: sizeChartEntrySchema, default: null },
+  L: { type: sizeChartEntrySchema, default: null },
+  XL: { type: sizeChartEntrySchema, default: null }
+}, { _id: false });
+
 const productSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -43,6 +58,16 @@ const productSchema = new mongoose.Schema({
   images: {
     type: [String],
     default: []
+  },
+  // Transparent PNG used for virtual try-on overlay
+  vtoImage: {
+    type: String,
+    default: null
+  },
+  // Size chart used for fit recommendation (values should be consistent with user's bodyMeasurements units)
+  sizeChart: {
+    type: sizeChartSchema,
+    default: null
   },
   stockQuantity: {
     type: Number,
