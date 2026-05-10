@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { FiMail, FiPhone, FiMapPin, FiSend } from 'react-icons/fi';
 import api from '../utils/api';
-import Footer from '../components/Footer';
 
 const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
 
@@ -107,7 +106,7 @@ const ContactUs = () => {
                 <div>
                   <h3 className="font-semibold text-gray-900 mb-1">Phone</h3>
                   <p className="text-gray-600">+9779880097080</p>
-                  <p className="text-gray-600">Mon-Fri, 9am-5pm NST</p>
+                  <p className="text-gray-600">Sunday-Thursday, 9am-5pm NST</p>
                 </div>
               </div>
               <div className="flex items-start space-x-4">
@@ -119,7 +118,7 @@ const ContactUs = () => {
                   <p className="text-gray-600">
                     Budhalinkantha, Kapan <br />
                     Kathmandu, 44600 <br />
-                    Nepalp
+                    Nepal
                   </p>
                 </div>
               </div>
@@ -128,7 +127,7 @@ const ContactUs = () => {
               <h3 className="font-semibold text-gray-900 mb-4">Office Hours</h3>
               <div className="space-y-2 text-gray-600">
                 <p><span className="font-medium">Sunday - Thursday:</span> 9:00 AM - 5:00 PM</p>
-                <p><span className="font-medium">Friday:</span> 10:00 AM - 2:00 PM</p>
+                <p><span className="font-medium">Friday:</span> 9:00 AM - 2:00 PM</p>
                 <p><span className="font-medium">Saturday:</span> Closed</p>
               </div>
             </div>
@@ -285,7 +284,6 @@ const ContactUs = () => {
           </div>
         </div>
       </div>
-      <Footer />
     </div>
   );
 };

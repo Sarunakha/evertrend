@@ -1,5 +1,4 @@
 import { FiShoppingBag, FiTrendingUp, FiHeart, FiGlobe } from 'react-icons/fi';
-import Footer from '../components/Footer';
 
 const About = () => {
   return (
@@ -95,9 +94,6 @@ const About = () => {
           </div>
         </div>
       </div>
-      
-      {/* Footer */}
-      <Footer />
     </div>
   );
 };

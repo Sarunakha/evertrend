@@ -8,6 +8,10 @@ export const protect = async (req, res, next) => {
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
   }
+  // Support token via query param for EventSource/SSE (cannot set headers)
+  if (!token && req.query && typeof req.query.token === 'string') {
+    token = req.query.token;
+  }
 
   if (!token) {
     return res.status(401).json({

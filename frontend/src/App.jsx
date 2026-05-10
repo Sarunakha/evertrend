@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
@@ -23,6 +24,18 @@ import Messages from './pages/Messages';
 import BuyerDashboard from './pages/dashboards/BuyerDashboard';
 import SellerDashboard from './pages/dashboards/SellerDashboard';
 import AdminDashboard from './pages/dashboards/AdminDashboard';
+import Footer from './components/Footer';
+import TermsAndConditions from './pages/TermsAndConditions';
+
+const ScrollToTop = () => {
+  const { pathname, search } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+  }, [pathname, search]);
+
+  return null;
+};
 
 // Component to conditionally render Navbar
 const AppContent = () => {
@@ -30,9 +43,10 @@ const AppContent = () => {
   const isAdminRoute = location.pathname.startsWith('/dashboard/admin');
   
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white flex flex-col">
       {!isAdminRoute && <Navbar />}
-      <Routes>
+      <div className="flex-1">
+        <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -49,6 +63,7 @@ const AppContent = () => {
             <Route path="/payment/success" element={<PaymentSuccess />} />
             <Route path="/payment/failure" element={<PaymentFailure />} />
             <Route path="/messages/:conversationId?" element={<Messages />} />
+            <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
             
             {/* Protected Dashboard Routes */}
             <Route
@@ -77,7 +92,9 @@ const AppContent = () => {
             />
             
             <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </div>
+      {!isAdminRoute && <Footer />}
     </div>
   );
 };
@@ -88,6 +105,7 @@ function App() {
       <CartProvider>
         <SocketProvider>
           <Router>
+            <ScrollToTop />
             <AppContent />
           </Router>
         </SocketProvider>

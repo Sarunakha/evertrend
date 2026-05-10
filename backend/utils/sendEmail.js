@@ -1,112 +1,140 @@
 import nodemailer from 'nodemailer';
 
-// Create reusable transporter object using SMTP transport
-const createTransporter = async () => {
-  // For development, use Ethereal Email (fake SMTP service)
-  if (process.env.NODE_ENV === 'development' || !process.env.EMAIL_HOST) {
-    try {
-      // Create a test account if credentials not provided
-      if (!process.env.ETHEREAL_USER || !process.env.ETHEREAL_PASS) {
-        console.log('Creating Ethereal test account...');
-        const testAccount = await nodemailer.createTestAccount();
-        console.log('Ethereal account created:', testAccount.user);
-        
-        return nodemailer.createTransporter({
-          host: 'smtp.ethereal.email',
-          port: 587,
-          secure: false,
-          auth: {
-            user: testAccount.user,
-            pass: testAccount.pass
-          }
-        });
-      }
-      
-      return nodemailer.createTransporter({
-        host: 'smtp.ethereal.email',
-        port: 587,
-        secure: false,
-        auth: {
-          user: process.env.ETHEREAL_USER,
-          pass: process.env.ETHEREAL_PASS
-        }
-      });
-    } catch (etherealError) {
-      console.error('Error creating Ethereal account:', etherealError);
-      // Fallback: Create a mock transporter that logs instead of sending
-      console.warn('⚠️  Using mock email transporter (emails will be logged only)');
-      return {
-        verify: async () => true,
-        sendMail: async (message) => {
-          console.log('\n📧 MOCK EMAIL (Email service unavailable):');
-          console.log('To:', message.to);
-          console.log('Subject:', message.subject);
-          console.log('Text:', message.text);
-          return { messageId: 'mock-' + Date.now() };
-        }
-      };
-    }
+class EmailNotConfiguredError extends Error {
+  constructor(message = 'Email service is not configured.') {
+    super(message);
+    this.name = 'EmailNotConfiguredError';
+    this.code = 'EMAIL_NOT_CONFIGURED';
+  }
+}
+
+let cachedTransporter = null;
+let verifiedOnce = false;
+
+const getTransporter = () => {
+  if (cachedTransporter) return cachedTransporter;
+
+  const user = process.env.EMAIL_USER;
+  const pass = process.env.EMAIL_PASS;
+  const debug = process.env.EMAIL_DEBUG === 'true';
+
+  if (!user || !pass) {
+    throw new EmailNotConfiguredError('Missing EMAIL_USER or EMAIL_PASS in environment variables.');
   }
 
-  // For production, use real SMTP (Gmail, SendGrid, etc.)
-  return nodemailer.createTransporter({
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT || 587,
-    secure: process.env.EMAIL_SECURE === 'true',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
+  // Gmail transport (requires App Password if 2FA enabled)
+  cachedTransporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user, pass },
+    logger: debug,
+    debug,
+    // Fail fast so frontend doesn't hit Axios 30s timeout
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000
   });
+
+  return cachedTransporter;
 };
 
+/**
+ * Send an email.
+ * Supports both {to, subject, html, text} and legacy {email, subject, html, message}.
+ */
 export const sendEmail = async (options) => {
-  let transporter;
-  
-  try {
-    transporter = await createTransporter();
-    
-    // Verify connection
-    await transporter.verify();
-    
-    const message = {
-      from: `${process.env.EMAIL_FROM_NAME || 'EverTrend'} <${process.env.EMAIL_FROM || 'noreply@evertrend.com'}>`,
-      to: options.email,
-      subject: options.subject,
-      text: options.message,
-      html: options.html || options.message
-    };
-
-    const info = await transporter.sendMail(message);
-
-    // In development with Ethereal, get the preview URL
-    let previewUrl = null;
-    if (process.env.NODE_ENV === 'development' && info.messageId) {
-      previewUrl = nodemailer.getTestMessageUrl(info);
-      if (previewUrl) {
-        console.log('\n✅ Email sent successfully!');
-        console.log('📧 Preview URL:', previewUrl);
-        console.log('📬 To:', options.email);
-        console.log('');
+  const transporter = getTransporter();
+  if (!verifiedOnce) {
+    try {
+      // Verify at most once per process
+      await transporter.verify();
+      verifiedOnce = true;
+    } catch (err) {
+      // Normalize nodemailer auth errors so callers can show helpful messages
+      if (err?.code === 'EAUTH') {
+        const e = new Error('Email authentication failed. Check EMAIL_USER/EMAIL_PASS (use a Gmail App Password).');
+        e.name = 'EmailAuthError';
+        e.code = 'EMAIL_AUTH_FAILED';
+        throw e;
       }
+      throw err;
     }
-
-    return { 
-      success: true, 
-      messageId: info.messageId,
-      previewUrl: previewUrl
-    };
-  } catch (error) {
-    console.error('❌ Error sending email:', error.message);
-    if (error.code) {
-      console.error('Error code:', error.code);
-    }
-    if (error.response) {
-      console.error('SMTP response:', error.response);
-    }
-    throw error;
   }
+
+  const to = options.to || options.email;
+  const subject = options.subject;
+  const html = options.html;
+  const text = options.text || options.message || '';
+
+  if (!to) throw new Error('sendEmail: missing "to" (or legacy "email")');
+  if (!subject) throw new Error('sendEmail: missing "subject"');
+  if (!html && !text) throw new Error('sendEmail: missing "html" or "text"');
+
+  const fromEmail = process.env.EMAIL_FROM || process.env.EMAIL_USER;
+  const fromName = process.env.EMAIL_FROM_NAME || 'EverTrend';
+
+  let info;
+  try {
+    info = await transporter.sendMail({
+      from: `${fromName} <${fromEmail}>`,
+      to,
+      subject,
+      text,
+      html: html || text
+    });
+  } catch (err) {
+    if (err?.code === 'EAUTH') {
+      const e = new Error('Email authentication failed. Check EMAIL_USER/EMAIL_PASS (use a Gmail App Password).');
+      e.name = 'EmailAuthError';
+      e.code = 'EMAIL_AUTH_FAILED';
+      throw e;
+    }
+    throw err;
+  }
+
+  return { success: true, messageId: info.messageId };
 };
+
+export const otpEmailTemplate = (otp, minutes = 15) => ({
+  subject: 'Your EverTrend verification code',
+  html: `
+    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 20px;">
+      <h2 style="margin: 0 0 12px; color: #111827;">Verify your email</h2>
+      <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">
+        Your One-Time Password (OTP) is:
+      </p>
+      <div style="background: #F3F4F6; border-radius: 10px; padding: 18px; text-align: center; margin: 16px 0;">
+        <div style="font-size: 34px; letter-spacing: 8px; font-weight: 700; color: #111827;">
+          ${otp}
+        </div>
+      </div>
+      <p style="margin: 0; color: #6B7280; font-size: 13px;">
+        This code is valid for ${minutes} minutes. If you did not request this, you can ignore this email.
+      </p>
+    </div>
+  `
+});
+
+export const verificationLinkEmailTemplate = (verificationLink) => ({
+  subject: 'Verify your EverTrend email',
+  html: `
+    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 20px;">
+      <h2 style="margin: 0 0 12px; color: #111827;">Verify your email</h2>
+      <p style="margin: 0 0 16px; color: #374151; line-height: 1.6;">
+        Please verify your email by clicking the button below:
+      </p>
+      <p style="margin: 18px 0;">
+        <a href="${verificationLink}" style="display:inline-block; background:#1B5E20; color:#ffffff; text-decoration:none; padding:12px 18px; border-radius:8px; font-weight:600;">
+          Verify Email
+        </a>
+      </p>
+      <p style="margin: 0; color: #6B7280; font-size: 13px; line-height: 1.6;">
+        Or copy and paste this link into your browser:
+        <br />
+        <span style="word-break: break-all;">${verificationLink}</span>
+      </p>
+    </div>
+  `
+});
 
 /**
  * Send OTP verification email
@@ -115,88 +143,7 @@ export const sendEmail = async (options) => {
  * @returns {Promise<{success: boolean, messageId?: string, previewUrl?: string}>}
  */
 export const sendOTP = async (email, otp) => {
-  const htmlTemplate = `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Verify Your Email - EverTrend</title>
-    </head>
-    <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f5f5f5;">
-      <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #f5f5f5;">
-        <tr>
-          <td align="center" style="padding: 40px 20px;">
-            <table role="presentation" style="max-width: 600px; width: 100%; background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-              <!-- Header -->
-              <tr>
-                <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #1B5E20 0%, #2E7D32 100%); border-radius: 8px 8px 0 0;">
-                  <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold; letter-spacing: 2px;">EVERTREND</h1>
-                  <p style="margin: 10px 0 0; color: #ffffff; font-size: 14px; opacity: 0.9;">Curating the styles of tomorrow, today.</p>
-                </td>
-              </tr>
-              
-              <!-- Content -->
-              <tr>
-                <td style="padding: 40px;">
-                  <h2 style="margin: 0 0 20px; color: #1B5E20; font-size: 24px; font-weight: 600;">Verify Your Email Address</h2>
-                  <p style="margin: 0 0 30px; color: #666666; font-size: 16px; line-height: 1.6;">
-                    Thank you for signing up with EverTrend! To complete your registration, please use the verification code below:
-                  </p>
-                  
-                  <!-- OTP Code Box -->
-                  <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border: 2px dashed #1B5E20; border-radius: 12px; padding: 30px; text-align: center; margin: 30px 0;">
-                    <p style="margin: 0 0 15px; color: #666666; font-size: 14px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px;">Your Verification Code</p>
-                    <div style="display: inline-block; background-color: #ffffff; padding: 20px 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-                      <h1 style="margin: 0; color: #1B5E20; font-size: 42px; font-weight: bold; letter-spacing: 8px; font-family: 'Courier New', monospace;">${otp}</h1>
-                    </div>
-                    <p style="margin: 20px 0 0; color: #999999; font-size: 12px;">This code will expire in 10 minutes</p>
-                  </div>
-                  
-                  <p style="margin: 30px 0 0; color: #666666; font-size: 14px; line-height: 1.6;">
-                    If you didn't request this code, please ignore this email or contact our support team if you have concerns.
-                  </p>
-                </td>
-              </tr>
-              
-              <!-- Footer -->
-              <tr>
-                <td style="padding: 30px 40px; background-color: #f8f9fa; border-radius: 0 0 8px 8px; text-align: center;">
-                  <p style="margin: 0; color: #999999; font-size: 12px;">
-                    © ${new Date().getFullYear()} EverTrend. All rights reserved.
-                  </p>
-                  <p style="margin: 10px 0 0; color: #999999; font-size: 12px;">
-                    This is an automated email, please do not reply.
-                  </p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-      </table>
-    </body>
-    </html>
-  `;
-
-  const textMessage = `
-EverTrend - Email Verification
-
-Thank you for signing up with EverTrend!
-
-Your verification code is: ${otp}
-
-This code will expire in 10 minutes.
-
-If you didn't request this code, please ignore this email.
-
-© ${new Date().getFullYear()} EverTrend. All rights reserved.
-  `;
-
-  return await sendEmail({
-    email,
-    subject: 'Verify Your Email - EverTrend',
-    message: textMessage,
-    html: htmlTemplate
-  });
+  const tpl = otpEmailTemplate(otp, 10);
+  return await sendEmail({ to: email, subject: tpl.subject, html: tpl.html, text: `Your One-Time Password is: ${otp}` });
 };
 

@@ -1,9 +1,8 @@
 import User from '../models/User.js';
 import Message from '../models/Message.js';
+import ContactSubmission from '../models/ContactSubmission.js';
 import Notification from '../models/Notification.js';
 import { sendEmail } from '../utils/sendEmail.js';
-
-const ADMIN_EMAIL = 'sarunakhadka90@gmail.com';
 
 /**
  * POST /api/contact/submit
@@ -28,8 +27,8 @@ export const submitContact = async (req, res) => {
       });
     }
 
-    const admin = await User.findOne({ role: 'Admin' }).select('_id').lean();
-    if (!admin) {
+    const admins = await User.find({ role: 'Admin' }).select('_id email').lean();
+    if (!admins || admins.length === 0) {
       return res.status(500).json({
         success: false,
         message: 'Admin user not found. Please try again later.'
@@ -66,16 +65,12 @@ This message was sent via the EverTrend Contact Us form.
       <p><em>This message was sent via the EverTrend Contact Us form.</em></p>
     `;
 
-    await sendEmail({
-      email: ADMIN_EMAIL,
-      subject: `[EverTrend Contact] ${subjectTrimmed}`,
-      message: emailBody,
-      html: htmlBody
-    });
-
+    // 1) Always persist to DB first (so email issues never block saving)
     const messageDoc = await Message.create({
       type: 'contact_form',
-      receiverId: admin._id,
+      // Make contact form messages visible to ANY admin.
+      // (If you later want per-admin assignment, set receiverId explicitly.)
+      receiverId: null,
       senderName,
       senderEmail,
       subject: subjectTrimmed,
@@ -83,14 +78,45 @@ This message was sent via the EverTrend Contact Us form.
       contactStatus: 'pending'
     });
 
-    await Notification.create({
-      recipientId: admin._id,
-      senderId: null,
-      type: 'CONTACT_FORM',
-      message: `New inquiry from ${senderName} via Contact Us form.`,
-      relatedId: messageDoc._id,
+    // Also save a copy to ContactSubmission collection (for compatibility with Atlas checks)
+    // receiverId is required on ContactSubmission, so we use the first admin.
+    await ContactSubmission.create({
+      receiverId: admins[0]._id,
+      senderName,
+      senderEmail,
+      subject: subjectTrimmed,
+      content: contentTrimmed,
       isRead: false
     });
+
+    await Promise.allSettled(
+      admins.map((admin) =>
+        Notification.create({
+          recipientId: admin._id,
+          senderId: null,
+          type: 'CONTACT_FORM',
+          message: `New inquiry from ${senderName} via Contact Us form.`,
+          relatedId: messageDoc._id,
+          isRead: false
+        })
+      )
+    );
+
+    // 2) Best-effort email send (do not fail the request if email fails)
+    const adminEmails = admins.map((a) => a.email).filter(Boolean);
+    if (adminEmails.length > 0) {
+      try {
+        // comma-separated list is supported by nodemailer
+        await sendEmail({
+          email: adminEmails.join(','),
+          subject: `[EverTrend Contact] ${subjectTrimmed}`,
+          message: emailBody,
+          html: htmlBody
+        });
+      } catch (emailError) {
+        console.error('Contact submit email error (non-blocking):', emailError);
+      }
+    }
 
     return res.status(200).json({
       success: true,

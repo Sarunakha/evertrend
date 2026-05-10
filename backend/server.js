@@ -3,6 +3,9 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import connectDB from './config/database.js';
 
+// Load environment variables EARLY (before importing routes/utils that may read process.env)
+dotenv.config();
+
 // Import routes
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
@@ -24,9 +27,6 @@ import chatRoutes from './routes/chatRoutes.js';
 import vtoRoutes from './routes/vto.js';
 import contactRoutes from './routes/contactRoutes.js';
 import tryOnRoutes from './routes/tryOn.js';
-
-// Load environment variables
-dotenv.config();
 
 // Validate required environment variables
 const requiredEnvVars = ['JWT_SECRET', 'MONGODB_URI'];

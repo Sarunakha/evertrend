@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import Footer from '../components/Footer';
 import bannerImage from '../assets/banner-image.png';
 
 const Home = () => {
@@ -15,8 +14,8 @@ const Home = () => {
     const fetchProducts = async () => {
       try {
         const [thriftResponse, newArrivalsResponse] = await Promise.all([
-          api.get('/products?condition=Good&limit=8'),
-          api.get('/products?sortBy=createdAt&sortOrder=desc&limit=8')
+          api.get('/products?excludeCondition=New&sortBy=createdAt&sortOrder=desc&limit=8'),
+          api.get('/products?condition=New&sortBy=createdAt&sortOrder=desc&limit=8')
         ]);
         setThriftProducts(thriftResponse.data.data || []);
         setNewArrivals(newArrivalsResponse.data.data || []);
@@ -88,7 +87,7 @@ const Home = () => {
                 <p className="text-gray-600">Pre-loved fashion that's good for you and the planet</p>
               </div>
               <Link
-                to="/products?condition=Good"
+                to="/products?excludeCondition=New"
                 className="font-semibold transition"
                 style={{ color: '#fab242' }}
                 onMouseEnter={(e) => e.currentTarget.style.color = '#d19c49'}
@@ -140,7 +139,7 @@ const Home = () => {
                 <p className="text-gray-600">Fresh additions to our collection</p>
               </div>
               <Link
-                to="/products?sortBy=createdAt&sortOrder=desc"
+                to="/products?condition=New&sortBy=createdAt&sortOrder=desc"
                 className="font-semibold transition"
                 style={{ color: '#fab242' }}
                 onMouseEnter={(e) => e.currentTarget.style.color = '#d19c49'}
@@ -185,8 +184,6 @@ const Home = () => {
           </div>
         </div>
       </div>
-      
-      <Footer />
     </div>
   );
 };

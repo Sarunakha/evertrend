@@ -21,10 +21,27 @@ const ProductDetail = () => {
   const [selectedSize, setSelectedSize] = useState('');
   const [addingToCart, setAddingToCart] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [toast, setToast] = useState({ open: false, message: '', type: 'success' });
+  const [toastTimer, setToastTimer] = useState(null);
 
   useEffect(() => {
     fetchProduct();
   }, [id]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer) clearTimeout(toastTimer);
+    };
+  }, [toastTimer]);
+
+  const showToast = (message, type = 'success') => {
+    if (toastTimer) clearTimeout(toastTimer);
+    setToast({ open: true, message, type });
+    const timer = setTimeout(() => {
+      setToast((t) => ({ ...t, open: false }));
+    }, 2200);
+    setToastTimer(timer);
+  };
 
   useEffect(() => {
     if (product) {
@@ -108,12 +125,12 @@ const ProductDetail = () => {
     try {
       const result = await addToCart(id, quantity, selectedSize);
       if (result.success) {
-        alert('Item added to cart!');
+        showToast('Item has been added to the cart.', 'success');
       } else {
-        alert(result.message || 'Failed to add item to cart');
+        showToast(result.message || 'Failed to add item to cart.', 'error');
       }
     } catch (error) {
-      alert(error.message || 'Failed to add item to cart');
+      showToast(error.message || 'Failed to add item to cart.', 'error');
     } finally {
       setAddingToCart(false);
     }
@@ -133,6 +150,21 @@ const ProductDetail = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {toast.open && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50">
+          <div
+            className={`px-4 py-2 rounded-md shadow-lg text-sm font-medium border ${
+              toast.type === 'success'
+                ? 'bg-green-50 text-green-800 border-green-200'
+                : 'bg-red-50 text-red-800 border-red-200'
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
       <div className="grid md:grid-cols-2 gap-8">
         {/* Product Images */}
         <div>

@@ -4,7 +4,7 @@ import User from '../models/User.js';
 import OTP from '../models/OTP.js';
 import { generateToken } from '../utils/generateToken.js';
 import { protect } from '../middleware/auth.js';
-import { sendEmail, sendOTP } from '../utils/sendEmail.js';
+import { sendEmail, sendOTP, otpEmailTemplate, verificationLinkEmailTemplate } from '../utils/sendEmail.js';
 import { validateEmail } from '../utils/emailValidator.js';
 import crypto from 'crypto';
 import { OAuth2Client } from 'google-auth-library';
@@ -84,14 +84,9 @@ router.post('/request-otp', async (req, res) => {
     // Send OTP email using nodemailer
     try {
       await sendOTP(normalizedEmail, otp);
-      console.log(`✅ OTP sent successfully to: ${normalizedEmail}`);
-      console.log(`🔑 OTP: ${otp} (for development/testing)`);
-      
       return res.status(200).json({
         success: true,
-        message: 'Verification code sent to your email. Please check your inbox.',
-        // Include OTP in development mode for testing
-        ...(process.env.NODE_ENV === 'development' && { otp })
+        message: 'Verification code sent to your email. Please check your inbox.'
       });
     } catch (emailError) {
       console.error('❌ Error sending OTP email:', emailError);
@@ -102,7 +97,12 @@ router.post('/request-otp', async (req, res) => {
       // Return specific error message as requested
       return res.status(500).json({
         success: false,
-        message: 'Could not send email. Please check if the email address is valid.'
+        message:
+          emailError?.code === 'EMAIL_NOT_CONFIGURED'
+            ? 'Email service is not configured on the server. Please set EMAIL_USER and EMAIL_PASS.'
+            : emailError?.code === 'EMAIL_AUTH_FAILED'
+            ? 'Email service authentication failed on the server. Please use a Gmail App Password for EMAIL_PASS.'
+            : 'Could not send email. Please check if the email address is valid.'
       });
     }
   } catch (error) {
@@ -344,7 +344,68 @@ router.post('/register', [
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const verificationTokenExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 
-    // Create user (unverified by default)
+    // Send verification email with OTP + link (only create user if email sends successfully)
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3002'}/verify-email?token=${verificationToken}`;
+
+    try {
+      const otpTpl = otpEmailTemplate(verificationOTP, 15);
+      const linkTpl = verificationLinkEmailTemplate(verificationUrl);
+      await sendEmail({
+        to: email,
+        subject: 'Verify Your EverTrend Account',
+        text: `Your One-Time Password is: ${verificationOTP}\nVerification link: ${verificationUrl}`,
+        html: `
+          ${otpTpl.html}
+          <div style="height: 12px;"></div>
+          ${linkTpl.html}
+        `
+      });
+    } catch (emailError) {
+      console.error('❌ Error sending verification email:', emailError);
+      // Dev fallback: if SMTP auth is not configured correctly, don't block registration UX.
+      // In production, keep this strict and return 500.
+      if (process.env.NODE_ENV === 'development' && emailError?.code === 'EMAIL_AUTH_FAILED') {
+        const user = await User.create({
+          username,
+          email,
+          password,
+          role: role || 'Buyer',
+          verificationToken,
+          verificationTokenExpire,
+          verificationOTP,
+          verificationOTPExpire
+        });
+
+        return res.status(201).json({
+          success: true,
+          message:
+            'Registration successful (development mode). Email could not be sent; use the verification code/link below.',
+          data: {
+            _id: user._id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            isVerified: user.isVerified
+          },
+          requiresVerification: true,
+          developmentMode: true,
+          emailSent: false,
+          verificationOTP,
+          verificationUrl
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message:
+          emailError?.code === 'EMAIL_NOT_CONFIGURED'
+            ? 'Email service is not configured on the server. Please set EMAIL_USER and EMAIL_PASS.'
+            : emailError?.code === 'EMAIL_AUTH_FAILED'
+            ? 'Email service authentication failed on the server. Please use a Gmail App Password for EMAIL_PASS.'
+            : 'Failed to send verification email. Please check your email address and try again.'
+      });
+    }
+
+    // Create user (unverified by default) AFTER email succeeds
     const user = await User.create({
       username,
       email,
@@ -356,96 +417,10 @@ router.post('/register', [
       verificationOTPExpire
     });
 
-    // Send verification email with OTP
-    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3002'}/verify-email?token=${verificationToken}`;
-    
-    let emailSent = false;
-    let emailPreviewUrl = null;
-    
-    try {
-      const emailResult = await sendEmail({
-        email: user.email,
-        subject: 'Verify Your EverTrend Account',
-        message: `Your verification code is: ${verificationOTP}\n\nOr click this link: ${verificationUrl}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #1B5E20;">Welcome to EverTrend!</h2>
-            <p>Thank you for signing up. Please verify your email address using the code below:</p>
-            <div style="background-color: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
-              <h1 style="font-size: 36px; letter-spacing: 8px; color: #1B5E20; margin: 0;">${verificationOTP}</h1>
-            </div>
-            <p style="color: #666; font-size: 14px;">This code will expire in 15 minutes.</p>
-            <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-            <p style="color: #666; font-size: 14px;">Or click the button below to verify:</p>
-            <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #1B5E20; color: white; text-decoration: none; border-radius: 4px; margin: 10px 0;">Verify Email</a>
-            <p style="color: #666; font-size: 12px; margin-top: 20px;">If you didn't create this account, please ignore this email.</p>
-          </div>
-        `
-      });
-      
-      emailSent = true;
-      emailPreviewUrl = emailResult.previewUrl || null;
-      
-      // Log success
-      console.log('\n✅ Verification email sent successfully!');
-      console.log(`📧 To: ${user.email}`);
-      console.log(`🔑 OTP: ${verificationOTP}`);
-      if (emailPreviewUrl) {
-        console.log(`🔗 Preview URL: ${emailPreviewUrl}`);
-      }
-      console.log('');
-      
-    } catch (emailError) {
-      console.error('❌ Error sending verification email:', emailError);
-      console.error('Email error details:', {
-        message: emailError.message,
-        code: emailError.code,
-        response: emailError.response
-      });
-      
-      // In development, always allow user creation and return OTP
-      if (process.env.NODE_ENV === 'development' || !process.env.EMAIL_HOST) {
-        console.log('\n========================================');
-        console.log('⚠️  EMAIL SENDING FAILED - DEVELOPMENT MODE');
-        console.log('========================================');
-        console.log(`User created: ${user.email}`);
-        console.log(`Verification OTP: ${verificationOTP}`);
-        console.log(`Verification URL: ${verificationUrl}`);
-        console.log('========================================\n');
-        
-        // Return success with OTP for development
-        return res.status(201).json({
-          success: true,
-          message: 'Registration successful! Use the verification code below to verify your email.',
-          data: {
-            _id: user._id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            isVerified: user.isVerified
-          },
-          requiresVerification: true,
-          developmentMode: true,
-          verificationOTP,
-          verificationUrl,
-          emailSent: false
-        });
-      }
-      
-      // In production, delete user if email fails
-      await User.findByIdAndDelete(user._id);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send verification email. Please check your email address and try again.'
-      });
-    }
-
     // Return success response
     const response = {
       success: true,
-      message: emailSent 
-        ? 'Registration successful! Please check your email for the verification code.'
-        : 'Registration successful! Please verify your email.',
+      message: 'Registration successful! Please check your email for the verification code.',
       data: {
         _id: user._id,
         username: user.username,
@@ -453,16 +428,9 @@ router.post('/register', [
         role: user.role,
         isVerified: user.isVerified
       },
-      requiresVerification: true
+      requiresVerification: true,
+      emailSent: true
     };
-
-    // In development, always include OTP for easy testing
-    if (process.env.NODE_ENV === 'development' || !process.env.EMAIL_HOST) {
-      response.developmentMode = true;
-      response.verificationOTP = verificationOTP;
-      response.verificationUrl = verificationUrl;
-      response.emailPreviewUrl = emailPreviewUrl;
-    }
 
     res.status(201).json(response);
   } catch (error) {
@@ -797,68 +765,48 @@ router.post('/resend-verification', [
     // Send verification email
     const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3002'}/verify-email?token=${verificationToken}`;
     
-    let emailSent = false;
-    let emailPreviewUrl = null;
-    
     try {
-      const emailResult = await sendEmail({
-        email: user.email,
+      const otpTpl = otpEmailTemplate(verificationOTP, 15);
+      const linkTpl = verificationLinkEmailTemplate(verificationUrl);
+      await sendEmail({
+        to: user.email,
         subject: 'Verify Your EverTrend Account',
-        message: `Your verification code is: ${verificationOTP}\n\nOr click this link: ${verificationUrl}`,
+        text: `Your One-Time Password is: ${verificationOTP}\nVerification link: ${verificationUrl}`,
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #1B5E20;">Verify Your EverTrend Account</h2>
-            <p>Please verify your email address using the code below:</p>
-            <div style="background-color: #f0f0f0; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
-              <h1 style="font-size: 36px; letter-spacing: 8px; color: #1B5E20; margin: 0;">${verificationOTP}</h1>
-            </div>
-            <p style="color: #666; font-size: 14px;">This code will expire in 15 minutes.</p>
-            <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-            <p style="color: #666; font-size: 14px;">Or click the button below to verify:</p>
-            <a href="${verificationUrl}" style="display: inline-block; padding: 12px 24px; background-color: #1B5E20; color: white; text-decoration: none; border-radius: 4px; margin: 10px 0;">Verify Email</a>
-          </div>
+          ${otpTpl.html}
+          <div style="height: 12px;"></div>
+          ${linkTpl.html}
         `
       });
-      
-      emailSent = true;
-      emailPreviewUrl = emailResult.previewUrl || null;
-      
-      console.log('\n✅ Verification email resent successfully!');
-      console.log(`📧 To: ${user.email}`);
-      console.log(`🔑 OTP: ${verificationOTP}`);
-      if (emailPreviewUrl) {
-        console.log(`🔗 Preview URL: ${emailPreviewUrl}`);
-      }
-      console.log('');
-      
     } catch (emailError) {
       console.error('❌ Error sending verification email:', emailError);
-      console.log('\n========================================');
-      console.log('⚠️  EMAIL SENDING FAILED - DEVELOPMENT MODE');
-      console.log('========================================');
-      console.log(`Email: ${user.email}`);
-      console.log(`Verification OTP: ${verificationOTP}`);
-      console.log(`Verification URL: ${verificationUrl}`);
-      console.log('========================================\n');
+      if (process.env.NODE_ENV === 'development' && emailError?.code === 'EMAIL_AUTH_FAILED') {
+        return res.json({
+          success: true,
+          message:
+            'Verification code generated (development mode). Email could not be sent; use the verification code/link below.',
+          developmentMode: true,
+          emailSent: false,
+          verificationOTP,
+          verificationUrl
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message:
+          emailError?.code === 'EMAIL_NOT_CONFIGURED'
+            ? 'Email service is not configured on the server. Please set EMAIL_USER and EMAIL_PASS.'
+            : emailError?.code === 'EMAIL_AUTH_FAILED'
+            ? 'Email service authentication failed on the server. Please use a Gmail App Password for EMAIL_PASS.'
+            : 'Failed to send verification email. Please try again later.'
+      });
     }
 
-    const response = {
+    res.json({
       success: true,
-      message: emailSent 
-        ? 'If an account with that email exists, a verification email has been sent.'
-        : 'Verification code generated. Check server console for OTP (development mode).',
-      emailSent
-    };
-
-    // In development, always include OTP
-    if (process.env.NODE_ENV === 'development' || !process.env.EMAIL_HOST) {
-      response.developmentMode = true;
-      response.verificationOTP = verificationOTP;
-      response.verificationUrl = verificationUrl;
-      response.emailPreviewUrl = emailPreviewUrl;
-    }
-
-    res.json(response);
+      message: 'If an account with that email exists, a verification email has been sent.',
+      emailSent: true
+    });
   } catch (error) {
     res.status(500).json({
       success: false,

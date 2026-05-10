@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import { FiSearch, FiFilter } from 'react-icons/fi';
-import Footer from '../components/Footer';
 
 const Products = () => {
   const [searchParams] = useSearchParams();
@@ -317,9 +316,6 @@ const Products = () => {
         </>
       )}
     </div>
-    
-    {/* Footer */}
-    <Footer />
     </div>
   );
 };

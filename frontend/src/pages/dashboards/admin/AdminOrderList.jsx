@@ -9,10 +9,27 @@ const AdminOrderList = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [adminRejectNote, setAdminRejectNote] = useState('');
   const [handlingOrderId, setHandlingOrderId] = useState(null);
+  const [toast, setToast] = useState({ open: false, message: '', type: 'success' });
+  const [toastTimer, setToastTimer] = useState(null);
 
   useEffect(() => {
     fetchOrders();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer) clearTimeout(toastTimer);
+    };
+  }, [toastTimer]);
+
+  const showToast = (message, type = 'success') => {
+    if (toastTimer) clearTimeout(toastTimer);
+    setToast({ open: true, message, type });
+    const timer = setTimeout(() => {
+      setToast((t) => ({ ...t, open: false }));
+    }, 2200);
+    setToastTimer(timer);
+  };
 
   const fetchOrders = async () => {
     try {
@@ -34,7 +51,7 @@ const AdminOrderList = () => {
       setShowDetailsModal(true);
     } catch (error) {
       console.error('Error fetching order details:', error);
-      alert('Error loading order details');
+      showToast('Error loading order details', 'error');
     }
   };
 
@@ -45,14 +62,14 @@ const AdminOrderList = () => {
         action,
         adminResponse: adminResponse.trim() || undefined
       });
-      alert(action === 'Approve' ? 'Cancellation approved.' : 'Cancellation rejected.');
+      showToast(action === 'Approve' ? 'Cancellation approved.' : 'Cancellation rejected.', action === 'Approve' ? 'success' : 'success');
       setShowDetailsModal(false);
       setSelectedOrder(null);
       setAdminRejectNote('');
       fetchOrders();
     } catch (error) {
       console.error('Handle cancellation error:', error);
-      alert(error.response?.data?.message || 'Failed to process cancellation');
+      showToast(error.response?.data?.message || 'Failed to process cancellation', 'error');
     } finally {
       setHandlingOrderId(null);
     }
@@ -100,6 +117,21 @@ const AdminOrderList = () => {
 
   return (
     <>
+      {toast.open && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50">
+          <div
+            className={`px-4 py-2 rounded-md shadow-lg text-sm font-medium border ${
+              toast.type === 'success'
+                ? 'bg-green-50 text-green-800 border-green-200'
+                : 'bg-red-50 text-red-800 border-red-200'
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-lg shadow-md p-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900">Order Management</h2>

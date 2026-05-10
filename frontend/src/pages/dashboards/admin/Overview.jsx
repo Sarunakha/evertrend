@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Activity, Flag, HardDrive } from 'lucide-react';
+import { Shield, Activity, Flag } from 'lucide-react';
 import api from '../../../utils/api';
 import MonthlySalesReport from './MonthlySalesReport';
 
@@ -7,11 +7,40 @@ const Overview = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [liveFeed, setLiveFeed] = useState([]);
+  const [liveFeedStatus, setLiveFeedStatus] = useState('connecting'); // connecting | connected | disconnected
 
   useEffect(() => {
     fetchOverview();
     const interval = setInterval(fetchOverview, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setLiveFeedStatus('disconnected');
+      return;
+    }
+
+    const es = new EventSource(`/api/admin/live-sales?token=${encodeURIComponent(token)}`);
+    setLiveFeedStatus('connecting');
+
+    const onReady = () => setLiveFeedStatus('connected');
+    const onOrder = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        setLiveFeed((prev) => [data, ...prev].slice(0, 25));
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    es.addEventListener('ready', onReady);
+    es.addEventListener('order.created', onOrder);
+    es.onerror = () => setLiveFeedStatus('disconnected');
+
+    return () => es.close();
   }, []);
 
   const fetchOverview = async () => {
@@ -45,11 +74,17 @@ const Overview = () => {
     });
   };
 
+  const formatOrderId = (id) => {
+    if (!id) return '';
+    const s = String(id);
+    return s.slice(-8);
+  };
+
   if (loading) {
     return (
       <div className="animate-pulse space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[1, 2, 3, 4].map(i => (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map(i => (
             <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
           ))}
         </div>
@@ -67,8 +102,8 @@ const Overview = () => {
 
   const statCards = [
     {
-      title: 'Total Revenue',
-      value: formatCurrency(stats?.stats?.revenue || 0),
+      title: 'Total Income',
+      value: formatCurrency(stats?.stats?.income ?? stats?.stats?.revenue ?? 0),
       icon: Shield,
       color: 'bg-blue-500',
       bgColor: 'bg-blue-50'
@@ -81,25 +116,18 @@ const Overview = () => {
       bgColor: 'bg-green-50'
     },
     {
-      title: 'Active Reports',
-      value: stats?.stats?.pendingReports || 0,
+      title: 'Flagged Products',
+      value: stats?.stats?.flaggedProducts || 0,
       icon: Flag,
       color: 'bg-orange-500',
       bgColor: 'bg-orange-50'
-    },
-    {
-      title: 'Server Health',
-      value: stats?.serverHealth?.status || 'Unknown',
-      icon: HardDrive,
-      color: stats?.serverHealth?.status === 'Healthy' ? 'bg-green-500' : 'bg-red-500',
-      bgColor: stats?.serverHealth?.status === 'Healthy' ? 'bg-green-50' : 'bg-red-50'
     }
   ];
 
   return (
     <div className="space-y-6">
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {statCards.map((card, index) => {
           const Icon = card.icon;
           return (
@@ -121,6 +149,64 @@ const Overview = () => {
 
       {/* Monthly Sales Report */}
       <MonthlySalesReport />
+
+      {/* Live Sales Feed */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900">Live Sales Feed</h2>
+          <div className="flex items-center gap-2 text-sm">
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-full ${
+                liveFeedStatus === 'connected'
+                  ? 'bg-green-500'
+                  : liveFeedStatus === 'connecting'
+                  ? 'bg-yellow-500'
+                  : 'bg-gray-400'
+              }`}
+            />
+            <span className="text-gray-600">
+              {liveFeedStatus === 'connected'
+                ? 'Live'
+                : liveFeedStatus === 'connecting'
+                ? 'Connecting…'
+                : 'Disconnected'}
+            </span>
+          </div>
+        </div>
+
+        {liveFeed.length === 0 ? (
+          <p className="text-gray-500 text-sm">No new orders yet.</p>
+        ) : (
+          <div className="space-y-3 max-h-80 overflow-auto pr-1">
+            {liveFeed.map((o, idx) => (
+              <div key={`${o?._id || 'order'}-${idx}`} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="min-w-0">
+                  <p className="font-semibold text-gray-900 truncate">
+                    Order #{formatOrderId(o?._id)}
+                  </p>
+                  <p className="text-sm text-gray-600 truncate">
+                    {o?.user?.username || o?.user?.email || 'Unknown buyer'} • NPR {o?.totalAmount ?? 0}
+                  </p>
+                  {Array.isArray(o?.items) && o.items.length > 0 && (
+                    <p className="text-xs text-gray-500 truncate mt-1">
+                      Items: {o.items.slice(0, 2).map((it) => it?.name).filter(Boolean).join(', ')}
+                      {o.items.length > 2 ? ` +${o.items.length - 2} more` : ''}
+                    </p>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0 ml-4">
+                  <span className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800">
+                    {o?.status || 'Pending'}
+                  </span>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {o?.createdAt ? formatDate(o.createdAt) : ''}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Recent Activity Feed */}
       <div className="bg-white rounded-xl shadow-md p-6">

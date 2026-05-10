@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { FiMail, FiLock, FiRefreshCw } from 'react-icons/fi';
+import { FiMail, FiLock, FiRefreshCw, FiEye, FiEyeOff } from 'react-icons/fi';
 import loginImage from '../assets/login-image.jpg';
 import GoogleAuth from '../components/GoogleAuth';
 
@@ -15,6 +15,7 @@ const Login = () => {
   const [requiresVerification, setRequiresVerification] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const { login, loginWithGoogle, user, fetchUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -164,9 +165,10 @@ const Login = () => {
       {/* Left Section - Image with Overlay */}
       <div className="hidden lg:flex lg:w-1/2 relative">
         <div 
-          className="absolute inset-0 bg-cover bg-center opacity-85"
+          className="absolute inset-0 bg-cover bg-center"
           style={{
-            backgroundImage: `url(${loginImage})`
+            backgroundImage: `url(${loginImage})`,
+            opacity: 0.65
           }}
         />
         <div className="relative z-10 flex flex-col justify-center items-center w-full px-12 text-black">
@@ -278,9 +280,9 @@ const Login = () => {
                 </div>
                 <input
                   name="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
-                  className="block w-full pl-10 pr-3 py-3 border rounded-md placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 transition"
+                  className="block w-full pl-10 pr-10 py-3 border rounded-md placeholder-gray-400 text-gray-900 focus:outline-none focus:ring-2 transition"
                   style={{ 
                     borderColor: '#b4b4b4',
                     '--tw-ring-color': '#fab242'
@@ -297,6 +299,14 @@ const Login = () => {
                   value={formData.password}
                   onChange={handleChange}
                 />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 transition"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPassword((v) => !v)}
+                >
+                  {showPassword ? <FiEye className="h-5 w-5" /> : <FiEyeOff className="h-5 w-5" />}
+                </button>
               </div>
             </div>
 

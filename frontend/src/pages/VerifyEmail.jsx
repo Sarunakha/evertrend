@@ -128,12 +128,12 @@ const VerifyEmail = () => {
         <div 
           className="absolute inset-0 bg-cover bg-center"
           style={{
-            backgroundImage: `url(${loginImage})`
+            backgroundImage: `url(${loginImage})`,
+            opacity: 0.65
           }}
         />
         <div className="relative z-10 flex flex-col justify-center items-center w-full px-12 text-black">
           <h1 className="text-7xl font-bold mb-4 tracking-tight">EVERTREND</h1>
-          <h1 className="text-7xl font-bold mb-8 tracking-tight">EVERTREND</h1>
           <p className="text-2xl font-light">Curating the styles of tomorrow, today.</p>
         </div>
       </div>
@@ -148,14 +148,6 @@ const VerifyEmail = () => {
                 ? 'Click the button below to verify your email address.'
                 : 'Enter the 6-digit code sent to your email address.'}
             </p>
-            {!token && (
-              <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p className="text-sm text-yellow-800">
-                  <strong>Note:</strong> In development mode, emails are not actually sent. 
-                  Check the server console or use the "Resend Verification Code" button to see the OTP.
-                </p>
-              </div>
-            )}
           </div>
 
           {verified ? (

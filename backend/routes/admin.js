@@ -11,8 +11,11 @@ import Conversation from '../models/Conversation.js';
 import Notification from '../models/Notification.js';
 import { protect, adminMiddleware } from '../middleware/auth.js';
 import { sendEmail } from '../utils/sendEmail.js';
+import { liveSalesFeed } from '../utils/liveSalesFeed.js';
 
 const router = express.Router();
+
+const COMMISSION_RATE = 0.2;
 
 // All admin routes require authentication and admin role
 router.use(protect);
@@ -25,10 +28,12 @@ router.get('/overview', async (req, res) => {
   try {
     const [
       totalRevenue,
+      totalIncome,
       totalUsers,
       totalProducts,
       totalOrders,
       pendingReports,
+      flaggedProducts,
       recentOrders,
       recentUsers
     ] = await Promise.all([
@@ -36,6 +41,11 @@ router.get('/overview', async (req, res) => {
       Order.aggregate([
         { $match: { status: 'Delivered' } },
         { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+      ]),
+      // Total Income (admin commission on delivered orders)
+      Order.aggregate([
+        { $match: { status: 'Delivered' } },
+        { $group: { _id: null, total: { $sum: { $multiply: ['$totalAmount', COMMISSION_RATE] } } } }
       ]),
       // Total Users
       User.countDocuments(),
@@ -45,6 +55,8 @@ router.get('/overview', async (req, res) => {
       Order.countDocuments(),
       // Pending Reports
       Report.countDocuments({ status: 'Pending' }),
+      // Flagged Products
+      Product.countDocuments({ flaggedForReview: true }),
       // Recent Orders (last 10)
       Order.find()
         .populate('userId', 'username email')
@@ -59,6 +71,7 @@ router.get('/overview', async (req, res) => {
     ]);
 
     const revenue = totalRevenue[0]?.total || 0;
+    const income = totalIncome[0]?.total || 0;
 
     // Calculate server health (simulated)
     const serverHealth = {
@@ -73,10 +86,12 @@ router.get('/overview', async (req, res) => {
       data: {
         stats: {
           revenue: revenue,
+          income: income,
           users: totalUsers,
           activeProducts: totalProducts,
           totalOrders: totalOrders,
-          pendingReports: pendingReports
+          pendingReports: pendingReports,
+          flaggedProducts: flaggedProducts
         },
         serverHealth,
         recentActivity: {
@@ -92,6 +107,179 @@ router.get('/overview', async (req, res) => {
       message: error.message || 'Error fetching overview data'
     });
   }
+});
+
+// @route   GET /api/admin/financial-statement
+// @desc    Financial statement (commission + payout per item)
+// @access  Private/Admin
+router.get('/financial-statement', async (req, res) => {
+  try {
+    const { page = 1, limit = 25, from, to, status = 'Delivered' } = req.query;
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const limitNum = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 200);
+    const skip = (pageNum - 1) * limitNum;
+
+    const match = { status };
+    if (from || to) {
+      match.createdAt = {};
+      if (from) match.createdAt.$gte = new Date(from);
+      if (to) match.createdAt.$lte = new Date(to);
+    }
+
+    const pipeline = [
+      { $match: match },
+      { $lookup: { from: 'orderitems', localField: '_id', foreignField: 'orderId', as: 'items' } },
+      {
+        $addFields: {
+          sumGross: {
+            $sum: {
+              $map: {
+                input: '$items',
+                as: 'it',
+                in: { $multiply: ['$$it.unitPrice', '$$it.quantity'] }
+              }
+            }
+          }
+        }
+      },
+      { $unwind: '$items' },
+      { $lookup: { from: 'products', localField: 'items.productId', foreignField: '_id', as: 'product' } },
+      { $unwind: { path: '$product', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'users', localField: 'product.sellerId', foreignField: '_id', as: 'seller' } },
+      { $unwind: { path: '$seller', preserveNullAndEmptyArrays: true } },
+      { $addFields: { grossLine: { $multiply: ['$items.unitPrice', '$items.quantity'] } } },
+      {
+        $addFields: {
+          discountShare: {
+            $cond: [
+              { $gt: ['$sumGross', 0] },
+              { $multiply: ['$couponDiscount', { $divide: ['$grossLine', '$sumGross'] }] },
+              0
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          netLine: { $subtract: ['$grossLine', '$discountShare'] },
+          commissionRate: COMMISSION_RATE
+        }
+      },
+      {
+        $addFields: {
+          adminCommission: { $multiply: ['$netLine', COMMISSION_RATE] },
+          sellerPayout: { $subtract: ['$netLine', { $multiply: ['$netLine', COMMISSION_RATE] }] }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          orderId: '$_id',
+          orderDate: '$createdAt',
+          paymentMethod: 1,
+          status: 1,
+          productId: '$product._id',
+          productName: '$product.name',
+          productImage: { $arrayElemAt: ['$product.images', 0] },
+          sellerId: '$seller._id',
+          sellerName: '$seller.username',
+          sellerEmail: '$seller.email',
+          quantity: '$items.quantity',
+          unitPrice: '$items.unitPrice',
+          grossLine: 1,
+          discountShare: 1,
+          netLine: 1,
+          commissionRate: 1,
+          adminCommission: 1,
+          sellerPayout: 1
+        }
+      },
+      { $sort: { orderDate: -1 } },
+      {
+        $facet: {
+          rows: [{ $skip: skip }, { $limit: limitNum }],
+          totals: [
+            {
+              $group: {
+                _id: null,
+                gross: { $sum: '$grossLine' },
+                net: { $sum: '$netLine' },
+                adminCommission: { $sum: '$adminCommission' },
+                sellerPayout: { $sum: '$sellerPayout' },
+                count: { $sum: 1 }
+              }
+            }
+          ]
+        }
+      }
+    ];
+
+    const result = await Order.aggregate(pipeline);
+    const rows = result?.[0]?.rows || [];
+    const totals = result?.[0]?.totals?.[0] || {
+      gross: 0,
+      net: 0,
+      adminCommission: 0,
+      sellerPayout: 0,
+      count: 0
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        commissionRate: COMMISSION_RATE,
+        rows,
+        totals: {
+          gross: totals.gross || 0,
+          net: totals.net || 0,
+          adminCommission: totals.adminCommission || 0,
+          sellerPayout: totals.sellerPayout || 0
+        }
+      },
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totals.count || 0,
+        pages: Math.ceil((totals.count || 0) / limitNum)
+      }
+    });
+  } catch (error) {
+    console.error('Admin financial-statement error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error fetching financial statement'
+    });
+  }
+});
+
+// @route   GET /api/admin/live-sales
+// @desc    Server-Sent Events stream for new orders
+// @access  Private/Admin
+router.get('/live-sales', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  // Initial hello so the client knows we're connected
+  res.write(`event: ready\ndata: {"ok":true}\n\n`);
+
+  const onOrderCreated = (payload) => {
+    res.write(`event: order.created\ndata: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  liveSalesFeed.on('order.created', onOrderCreated);
+
+  const ping = setInterval(() => {
+    res.write(`event: ping\ndata: ${Date.now()}\n\n`);
+  }, 20000);
+
+  req.on('close', () => {
+    clearInterval(ping);
+    liveSalesFeed.off('order.created', onOrderCreated);
+    res.end();
+  });
 });
 
 // @route   GET /api/admin/sales-report
@@ -628,7 +816,7 @@ router.get('/messages', async (req, res) => {
 
     const contactMessages = await Message.find({
       type: 'contact_form',
-      receiverId: adminId
+      $or: [{ receiverId: adminId }, { receiverId: null }]
     })
       .sort({ createdAt: -1 })
       .lean();
@@ -704,7 +892,7 @@ router.patch('/messages/:id', [
     const msg = await Message.findOne({
       _id: req.params.id,
       type: 'contact_form',
-      receiverId: req.user._id
+      $or: [{ receiverId: req.user._id }, { receiverId: null }]
     });
     if (!msg) {
       return res.status(404).json({
@@ -746,7 +934,7 @@ router.post('/messages/:id/reply', [
     const msg = await Message.findOne({
       _id: req.params.id,
       type: 'contact_form',
-      receiverId: req.user._id
+      $or: [{ receiverId: req.user._id }, { receiverId: null }]
     }).lean();
     if (!msg) {
       return res.status(404).json({

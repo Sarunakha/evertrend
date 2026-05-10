@@ -10,6 +10,7 @@ import Notification from '../models/Notification.js';
 import User from '../models/User.js';
 import { protect, authorize, checkOwnership, adminMiddleware } from '../middleware/auth.js';
 import { processPayment } from '../services/paymentService.js';
+import { publishOrderCreated } from '../utils/liveSalesFeed.js';
 
 // Points earning rate: 1 point per Rs.25
 const POINTS_PER_RUPEE = 1 / 25;
@@ -479,6 +480,25 @@ router.post('/', [
     // Populate order with items
     const populatedItems = await OrderItem.find({ orderId: order._id })
       .populate('productId');
+
+    publishOrderCreated({
+      _id: order._id,
+      totalAmount: order.totalAmount,
+      paymentMethod: order.paymentMethod,
+      status: order.status,
+      createdAt: order.createdAt || new Date(),
+      user: {
+        _id: req.user?._id,
+        username: req.user?.username,
+        email: req.user?.email
+      },
+      items: (populatedItems || []).map((it) => ({
+        productId: it.productId?._id || it.productId,
+        name: it.productId?.name,
+        quantity: it.quantity,
+        unitPrice: it.unitPrice
+      }))
+    });
 
     res.status(201).json({
       success: true,

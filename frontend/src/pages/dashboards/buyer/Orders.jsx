@@ -12,6 +12,8 @@ const Orders = () => {
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState(null);
+  const [toast, setToast] = useState({ open: false, message: '', type: 'success' });
+  const [toastTimer, setToastTimer] = useState(null);
   const [returnForm, setReturnForm] = useState({
     reason: '',
     images: []
@@ -25,6 +27,21 @@ const Orders = () => {
   useEffect(() => {
     fetchOrders();
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer) clearTimeout(toastTimer);
+    };
+  }, [toastTimer]);
+
+  const showToast = (message, type = 'success') => {
+    if (toastTimer) clearTimeout(toastTimer);
+    setToast({ open: true, message, type });
+    const timer = setTimeout(() => {
+      setToast((t) => ({ ...t, open: false }));
+    }, 2200);
+    setToastTimer(timer);
+  };
 
   const fetchOrders = async () => {
     try {
@@ -53,11 +70,11 @@ const Orders = () => {
     try {
       setConfirmingDelivery(orderId);
       await api.put(`/orders/${orderId}/confirm-delivery`);
-      alert('Delivery confirmed successfully!');
+      showToast('Delivery confirmed successfully!', 'success');
       fetchOrders(); // Refresh orders
     } catch (error) {
       console.error('Error confirming delivery:', error);
-      alert(error.response?.data?.message || 'Error confirming delivery');
+      showToast(error.response?.data?.message || 'Error confirming delivery', 'error');
     } finally {
       setConfirmingDelivery(null);
     }
@@ -66,7 +83,7 @@ const Orders = () => {
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
     if (!returnForm.reason.trim()) {
-      alert('Please provide a reason for the return');
+      showToast('Please provide a reason for the return.', 'error');
       return;
     }
 
@@ -78,13 +95,13 @@ const Orders = () => {
         reason: returnForm.reason,
         images: returnForm.images
       });
-      alert('Return request submitted successfully!');
+      showToast('Return request submitted successfully!', 'success');
       setShowReturnModal(false);
       setReturnForm({ reason: '', images: [] });
       fetchOrders(); // Refresh orders
     } catch (error) {
       console.error('Error submitting return request:', error);
-      alert(error.response?.data?.message || 'Error submitting return request');
+      showToast(error.response?.data?.message || 'Error submitting return request', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -127,13 +144,13 @@ const Orders = () => {
     try {
       setCancelSubmitting(true);
       await api.post(`/orders/${orderToCancel._id}/cancel`, { reason });
-      alert('Cancellation request submitted. Awaiting admin approval.');
+      showToast('Cancellation request submitted. Awaiting admin approval.', 'success');
       setShowCancelModal(false);
       setOrderToCancel(null);
       fetchOrders();
     } catch (error) {
       console.error('Cancel order error:', error);
-      alert(error.response?.data?.message || 'Failed to submit cancellation request');
+      showToast(error.response?.data?.message || 'Failed to submit cancellation request', 'error');
     } finally {
       setCancelSubmitting(false);
     }
@@ -179,6 +196,21 @@ const Orders = () => {
 
   return (
     <>
+      {toast.open && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50">
+          <div
+            className={`px-4 py-2 rounded-md shadow-lg text-sm font-medium border ${
+              toast.type === 'success'
+                ? 'bg-green-50 text-green-800 border-green-200'
+                : 'bg-red-50 text-red-800 border-red-200'
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {toast.message}
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-lg shadow-md p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">My Orders</h2>
 
