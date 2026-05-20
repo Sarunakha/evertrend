@@ -3,6 +3,7 @@ import { Stage, Layer, Image as KonvaImage, Transformer } from 'react-konva';
 import { FiX } from 'react-icons/fi';
 import { Download, RotateCcw, Sparkles, Wand2 } from 'lucide-react';
 import api from '../utils/api';
+import { resolveAssetUrl } from '../utils/env.js';
 
 const useHtmlImage = (src) => {
   const [image, setImage] = useState(null);
@@ -47,7 +48,7 @@ const VirtualTryOn = ({ product, onClose }) => {
     rotation: 0
   });
 
-  const productVtoImage = product?.vtoImage || '';
+  const productVtoImage = resolveAssetUrl(product?.vtoImage || product?.images?.[0] || '');
   const productName = product?.name || 'Product';
 
   const bgImage = useHtmlImage(userPhotoUrl);

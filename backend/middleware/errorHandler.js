@@ -24,10 +24,17 @@ export const errorHandler = (err, req, res, next) => {
     error = { message, statusCode: 400 };
   }
 
-  res.status(error.statusCode || 500).json({
+  const isProduction = process.env.NODE_ENV === 'production';
+  const statusCode = error.statusCode || 500;
+  const message =
+    isProduction && statusCode === 500
+      ? 'Something went wrong. Please try again later.'
+      : error.message || 'Server Error';
+
+  res.status(statusCode).json({
     success: false,
-    message: error.message || 'Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    message,
+    ...(!isProduction && { stack: err.stack })
   });
 };
 

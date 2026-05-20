@@ -3,6 +3,7 @@ import { useSearchParams, useLocation } from 'react-router-dom';
 import { Upload, ZoomIn, ZoomOut, MoveUp, MoveDown, MoveLeft, MoveRight, Sparkles } from 'lucide-react';
 import api from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
+import { resolveAssetUrl } from '../../utils/env.js';
 
 const MAX_MB = 5;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
@@ -64,7 +65,9 @@ const BuyerTryOnTab = () => {
     [products, selectedProductId]
   );
 
-  const productOverlay = selectedProduct?.vtoImage || selectedProduct?.images?.[0] || '';
+  const productOverlay = resolveAssetUrl(
+    selectedProduct?.vtoImage || selectedProduct?.images?.[0] || ''
+  );
 
   const pickPhoto = (file) => {
     if (!file) return;

@@ -28,26 +28,64 @@ import vtoRoutes from './routes/vto.js';
 import contactRoutes from './routes/contactRoutes.js';
 import tryOnRoutes from './routes/tryOn.js';
 
-// Validate required environment variables
-const requiredEnvVars = ['JWT_SECRET', 'MONGODB_URI'];
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+const isVercel = process.env.VERCEL === '1';
+const isProduction = process.env.NODE_ENV === 'production';
 
-if (missingEnvVars.length > 0) {
+// Validate required environment variables (skip hard exit on Vercel build — validate at runtime)
+const requiredEnvVars = ['JWT_SECRET', 'MONGODB_URI', 'MONGO_URI'];
+const hasMongo = process.env.MONGODB_URI || process.env.MONGO_URI;
+const missingEnvVars = ['JWT_SECRET'].filter((key) => !process.env[key]);
+if (!hasMongo) missingEnvVars.push('MONGODB_URI');
+
+if (missingEnvVars.length > 0 && !isVercel) {
   console.error('\n❌ Missing required environment variables:');
-  missingEnvVars.forEach(envVar => {
-    console.error(`   - ${envVar}`);
-  });
+  missingEnvVars.forEach((envVar) => console.error(`   - ${envVar}`));
   console.error('\nPlease set these variables in your .env file.\n');
   process.exit(1);
 }
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// CORS — allow frontend URL in production; permissive in local dev
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  'http://localhost:3000',
+  'http://localhost:3002',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3002'
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (!isProduction) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true
+  })
+);
+
 // Increase body size limit to handle base64 images (50MB)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Ensure MongoDB is connected on serverless (Vercel) before handling requests
+if (isVercel) {
+  app.use(async (req, res, next) => {
+    try {
+      await connectDB();
+      next();
+    } catch (error) {
+      console.error('Database connection failed:', error.message);
+      res.status(503).json({
+        success: false,
+        message: 'Service temporarily unavailable. Please try again later.'
+      });
+    }
+  });
+}
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -73,67 +111,79 @@ app.use('/api/try-on', tryOnRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
-  res.json({ message: 'EverTrend API is running' });
+  res.json({ message: 'EverTrend API is running', environment: isProduction ? 'production' : 'development' });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Global error handler:', err);
-  console.error('Error stack:', err.stack);
-  console.error('Request body size:', JSON.stringify(req.body).length);
-  
-  // Handle specific error types
+  console.error('Global error handler:', err.message);
+  if (!isProduction) {
+    console.error('Error stack:', err.stack);
+    console.error('Request body size:', JSON.stringify(req.body || {}).length);
+  }
+
+  if (err.message?.includes('CORS blocked')) {
+    return res.status(403).json({
+      success: false,
+      message: 'Request not allowed from this origin.'
+    });
+  }
+
   if (err.type === 'entity.parse.failed') {
-    return res.status(400).json({ 
+    return res.status(400).json({
       success: false,
-      message: 'Invalid JSON in request body. Request may be too large.' 
+      message: 'Invalid request data. Please check your input and try again.'
     });
   }
-  
+
   if (err.type === 'entity.too.large') {
-    return res.status(413).json({ 
+    return res.status(413).json({
       success: false,
-      message: 'Request body too large. Please reduce image sizes.' 
+      message: 'Request is too large. Please reduce image sizes and try again.'
     });
   }
-  
-  res.status(500).json({ 
+
+  const statusCode = err.statusCode || 500;
+  const clientMessage =
+    isProduction && statusCode === 500
+      ? 'Something went wrong. Please try again later.'
+      : err.message || 'Something went wrong!';
+
+  res.status(statusCode).json({
     success: false,
-    message: err.message || 'Something went wrong!',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    message: clientMessage,
+    ...(!isProduction && { stack: err.stack })
   });
 });
 
 const BASE_PORT = Number(process.env.PORT) || 5001;
 const MAX_PORT_PROBES = 5;
 
-/**
- * Try to start the HTTP server on the provided port. If the port is
- * already taken we probe the next port (up to MAX_PORT_PROBES times)
- * so macOS system services that bind to :5000 do not block our dev server.
- * @param {number} port
- * @param {number} probes
- */
 const attemptListen = (port, probes = 0) => {
   const server = app
     .listen(port, async () => {
       console.log(`\n✅ Server running in ${process.env.NODE_ENV || 'development'} mode on port ${port}`);
       console.log(`🌐 API available at: http://localhost:${port}/api`);
       console.log(`💚 Health check: http://localhost:${port}/api/health`);
-      try {
-        const { initializeSocket } = await import('./socket/socket.js');
-        initializeSocket(server);
-        console.log(`💬 Socket.io server initialized for real-time chat`);
-      } catch (socketError) {
-        console.error('Error initializing Socket.io:', socketError);
+
+      // Socket.io requires a persistent Node server — not available on Vercel serverless
+      if (!isVercel) {
+        try {
+          const { initializeSocket } = await import('./socket/socket.js');
+          initializeSocket(server);
+          console.log('💬 Socket.io server initialized for real-time chat');
+        } catch (socketError) {
+          console.error('Error initializing Socket.io:', socketError);
+        }
       }
-      console.log(`\n📡 Server is ready and waiting for requests...\n`);
+
+      console.log('\n📡 Server is ready and waiting for requests...\n');
     })
     .on('error', (error) => {
       if (error.code === 'EADDRINUSE' && probes < MAX_PORT_PROBES) {
         const nextPort = port + 1;
         console.warn(
-          `Port ${port} is already in use. Trying port ${nextPort} instead (attempt ${probes + 1}/${MAX_PORT_PROBES}).`,
+          `Port ${port} is already in use. Trying port ${nextPort} instead (attempt ${probes + 1}/${MAX_PORT_PROBES}).`
         );
         attemptListen(nextPort, probes + 1);
         return;
@@ -157,4 +207,16 @@ const startServer = async () => {
   }
 };
 
-startServer();
+// Local development: start HTTP server. Vercel: export app only (no listen).
+if (!isVercel) {
+  startServer();
+}
+
+// ESM export for @vercel/node (package.json has "type": "module")
+export default app;
+
+// CommonJS interop for tooling that expects module.exports
+// eslint-disable-next-line no-undef
+if (typeof module !== 'undefined') {
+  module.exports = app;
+}
