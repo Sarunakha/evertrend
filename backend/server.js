@@ -1,12 +1,10 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import connectDB from './config/database.js';
+import connectDB, { isDatabaseConfigured } from './config/database.js';
 
-// Load environment variables EARLY (before importing routes/utils that may read process.env)
 dotenv.config();
 
-// Import routes
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
 import userRoutes from './routes/users.js';
@@ -30,23 +28,22 @@ import tryOnRoutes from './routes/tryOn.js';
 
 const isVercel = process.env.VERCEL === '1';
 const isProduction = process.env.NODE_ENV === 'production';
+const isPreview = process.env.VERCEL_ENV === 'preview' || process.env.VERCEL_ENV === 'development';
+const showDebugErrors = !isProduction || isPreview;
 
-// Validate required environment variables (skip hard exit on Vercel build — validate at runtime)
-const requiredEnvVars = ['JWT_SECRET', 'MONGODB_URI', 'MONGO_URI'];
-const hasMongo = process.env.MONGODB_URI || process.env.MONGO_URI;
-const missingEnvVars = ['JWT_SECRET'].filter((key) => !process.env[key]);
-if (!hasMongo) missingEnvVars.push('MONGODB_URI');
-
-if (missingEnvVars.length > 0 && !isVercel) {
-  console.error('\n❌ Missing required environment variables:');
-  missingEnvVars.forEach((envVar) => console.error(`   - ${envVar}`));
-  console.error('\nPlease set these variables in your .env file.\n');
-  process.exit(1);
+if (!isVercel) {
+  const missing = [];
+  if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
+  if (!isDatabaseConfigured()) missing.push('MONGODB_URI');
+  if (missing.length > 0) {
+    console.error('\n❌ Missing required environment variables:');
+    missing.forEach((key) => console.error(`   - ${key}`));
+    process.exit(1);
+  }
 }
 
 const app = express();
 
-// CORS — allow frontend URL in production; permissive in local dev
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   'http://localhost:3000',
@@ -55,39 +52,108 @@ const allowedOrigins = [
   'http://127.0.0.1:3002'
 ].filter(Boolean);
 
+// Allow all *.vercel.app preview URLs for frontend
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (!isProduction) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  if (/^https:\/\/[\w-]+\.vercel\.app$/i.test(origin)) return true;
+  return false;
+};
+
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (!isProduction) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true
   })
 );
 
-// Increase body size limit to handle base64 images (50MB)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Ensure MongoDB is connected on serverless (Vercel) before handling requests
-if (isVercel) {
-  app.use(async (req, res, next) => {
-    try {
-      await connectDB();
-      next();
-    } catch (error) {
-      console.error('Database connection failed:', error.message);
-      res.status(503).json({
-        success: false,
-        message: 'Service temporarily unavailable. Please try again later.'
-      });
+// Root — no database required (fixes blank 503 when opening deployment URL)
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'EverTrend API',
+    docs: 'Use /api/health to check status',
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'development'
+  });
+});
+
+// Health check — reports DB status without blocking the whole app
+app.get('/api/health', async (req, res) => {
+  const payload = {
+    success: true,
+    message: 'EverTrend API is running',
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'development',
+    database: {
+      configured: isDatabaseConfigured(),
+      connected: false
     }
+  };
+
+  if (!isDatabaseConfigured()) {
+    payload.database.error = 'MONGODB_URI not set in environment variables';
+    if (showDebugErrors) {
+      payload.hint =
+        'Vercel → Settings → Environment Variables → add MONGODB_URI and enable it for Preview (development branch deploys use Preview).';
+    }
+    return res.status(200).json(payload);
+  }
+
+  try {
+    await connectDB();
+    payload.database.connected = true;
+    return res.json(payload);
+  } catch (error) {
+    payload.success = false;
+    payload.database.connected = false;
+    payload.database.error = showDebugErrors
+      ? error.message
+      : 'Unable to connect to database';
+    if (showDebugErrors) {
+      payload.hint =
+        'Check MongoDB Atlas: Network Access → allow 0.0.0.0/0, and verify MONGODB_URI in Vercel Preview env vars.';
+    }
+    return res.status(503).json(payload);
+  }
+});
+
+const dbMiddleware = async (req, res, next) => {
+  if (!isDatabaseConfigured()) {
+    return res.status(503).json({
+      success: false,
+      message: 'Database is not configured.',
+      ...(showDebugErrors && {
+        detail: 'Set MONGODB_URI in Vercel Environment Variables (Preview scope for development branch).'
+      })
+    });
+  }
+
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error('Database connection failed:', error.message);
+    return res.status(503).json({
+      success: false,
+      message: 'Service temporarily unavailable. Please try again later.',
+      ...(showDebugErrors && { detail: error.message })
+    });
+  }
+};
+
+if (isVercel) {
+  app.use('/api', (req, res, next) => {
+    if (req.path === '/health') return next();
+    return dbMiddleware(req, res, next);
   });
 }
 
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/users', userRoutes);
@@ -109,18 +175,9 @@ app.use('/api/vto', vtoRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/try-on', tryOnRoutes);
 
-// Health check route
-app.get('/api/health', (req, res) => {
-  res.json({ message: 'EverTrend API is running', environment: isProduction ? 'production' : 'development' });
-});
-
-// Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err.message);
-  if (!isProduction) {
-    console.error('Error stack:', err.stack);
-    console.error('Request body size:', JSON.stringify(req.body || {}).length);
-  }
+  if (showDebugErrors) console.error('Error stack:', err.stack);
 
   if (err.message?.includes('CORS blocked')) {
     return res.status(403).json({
@@ -145,14 +202,14 @@ app.use((err, req, res, next) => {
 
   const statusCode = err.statusCode || 500;
   const clientMessage =
-    isProduction && statusCode === 500
+    isProduction && !showDebugErrors && statusCode === 500
       ? 'Something went wrong. Please try again later.'
       : err.message || 'Something went wrong!';
 
   res.status(statusCode).json({
     success: false,
     message: clientMessage,
-    ...(!isProduction && { stack: err.stack })
+    ...(showDebugErrors && { stack: err.stack })
   });
 });
 
@@ -162,35 +219,26 @@ const MAX_PORT_PROBES = 5;
 const attemptListen = (port, probes = 0) => {
   const server = app
     .listen(port, async () => {
-      console.log(`\n✅ Server running in ${process.env.NODE_ENV || 'development'} mode on port ${port}`);
-      console.log(`🌐 API available at: http://localhost:${port}/api`);
-      console.log(`💚 Health check: http://localhost:${port}/api/health`);
+      console.log(`\n✅ Server running on port ${port}`);
+      console.log(`🌐 API: http://localhost:${port}/api`);
+      console.log(`💚 Health: http://localhost:${port}/api/health`);
 
-      // Socket.io requires a persistent Node server — not available on Vercel serverless
       if (!isVercel) {
         try {
           const { initializeSocket } = await import('./socket/socket.js');
           initializeSocket(server);
-          console.log('💬 Socket.io server initialized for real-time chat');
+          console.log('💬 Socket.io initialized');
         } catch (socketError) {
-          console.error('Error initializing Socket.io:', socketError);
+          console.error('Socket.io error:', socketError);
         }
       }
-
-      console.log('\n📡 Server is ready and waiting for requests...\n');
     })
     .on('error', (error) => {
       if (error.code === 'EADDRINUSE' && probes < MAX_PORT_PROBES) {
-        const nextPort = port + 1;
-        console.warn(
-          `Port ${port} is already in use. Trying port ${nextPort} instead (attempt ${probes + 1}/${MAX_PORT_PROBES}).`
-        );
-        attemptListen(nextPort, probes + 1);
+        attemptListen(port + 1, probes + 1);
         return;
       }
-
       console.error(`Failed to start server on port ${port}:`, error);
-      console.error('If you explicitly set PORT, free the port or pick a different value.');
       process.exit(1);
     });
 
@@ -198,25 +246,19 @@ const attemptListen = (port, probes = 0) => {
 };
 
 const startServer = async () => {
-  try {
-    await connectDB();
-    attemptListen(BASE_PORT);
-  } catch (error) {
-    console.error('Unable to connect to MongoDB:', error);
-    process.exit(1);
-  }
+  await connectDB();
+  attemptListen(BASE_PORT);
 };
 
-// Local development: start HTTP server. Vercel: export app only (no listen).
 if (!isVercel) {
-  startServer();
+  startServer().catch((err) => {
+    console.error('Unable to start server:', err);
+    process.exit(1);
+  });
 }
 
-// ESM export for @vercel/node (package.json has "type": "module")
 export default app;
 
-// CommonJS interop for tooling that expects module.exports
-// eslint-disable-next-line no-undef
 if (typeof module !== 'undefined') {
   module.exports = app;
 }
