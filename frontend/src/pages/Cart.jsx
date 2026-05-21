@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { FiShoppingCart, FiTrash2, FiPlus, FiMinus, FiArrowLeft } from 'react-icons/fi';
 import api from '../utils/api';
+import { resolveAssetUrl } from '../utils/env.js';
 
 const Cart = () => {
   const { user } = useAuth();
@@ -110,7 +111,7 @@ const Cart = () => {
                           >
                             {product.images && product.images[0] ? (
                               <img
-                                src={product.images[0]}
+                                src={resolveAssetUrl(product.images[0])}
                                 alt={product.name}
                                 className="w-full h-full object-cover"
                               />

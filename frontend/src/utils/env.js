@@ -22,15 +22,56 @@ export const getSocketUrl = () => {
   return '';
 };
 
-/** Resolve product/VTO image paths for production (supports absolute URLs and relative paths) */
+const isLocalHost = (hostname) =>
+  hostname === 'localhost' ||
+  hostname === '127.0.0.1' ||
+  hostname.endsWith('.local');
+
+/** Resolve product/VTO image paths for production (HTTPS, API origin, no localhost) */
 export const resolveAssetUrl = (src) => {
   if (!src || typeof src !== 'string') return '';
-  if (/^https?:\/\//i.test(src) || src.startsWith('data:') || src.startsWith('blob:')) {
-    return src;
+
+  let url = src.trim();
+  if (!url) return '';
+
+  if (url.startsWith('//')) {
+    url = `https:${url}`;
   }
+
+  if (url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+
   const origin = getApiOrigin();
-  if (origin && src.startsWith('/')) {
-    return `${origin}${src}`;
+
+  if (url.startsWith('/') && !url.startsWith('//') && origin) {
+    return `${origin}${url}`;
   }
-  return src;
+
+  if (/^https?:\/\//i.test(url)) {
+    try {
+      const parsed = new URL(url);
+
+      if (isLocalHost(parsed.hostname) && origin) {
+        return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      }
+
+      // Mixed content: HTTPS pages block http:// images
+      if (
+        typeof window !== 'undefined' &&
+        window.location.protocol === 'https:' &&
+        parsed.protocol === 'http:' &&
+        !isLocalHost(parsed.hostname)
+      ) {
+        parsed.protocol = 'https:';
+        return parsed.toString();
+      }
+
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  }
+
+  return url;
 };

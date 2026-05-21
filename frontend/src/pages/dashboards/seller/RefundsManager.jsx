@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FiPackage, FiCheck, FiX, FiClock } from 'react-icons/fi';
 import api from '../../../utils/api';
+import { resolveAssetUrl } from '../../../utils/env.js';
 
 const RefundsManager = () => {
   const [refunds, setRefunds] = useState([]);
@@ -156,7 +157,7 @@ const RefundsManager = () => {
                 </div>
                 {refund.productId?.images?.[0] && (
                   <img
-                    src={refund.productId.images[0]}
+                    src={resolveAssetUrl(refund.productId.images[0])}
                     alt={refund.productId.name}
                     className="w-20 h-20 object-cover rounded-lg ml-4"
                   />

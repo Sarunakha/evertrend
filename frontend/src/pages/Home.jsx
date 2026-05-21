@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { resolveAssetUrl } from '../utils/env.js';
 import bannerImage from '../assets/banner-image.png';
 
 const Home = () => {
@@ -111,7 +112,7 @@ const Home = () => {
                   >
                     {product.images && product.images[0] && (
                       <img
-                        src={product.images[0]}
+                        src={resolveAssetUrl(product.images[0])}
                         alt={product.name}
                         className="w-full h-64 object-cover"
                       />
@@ -163,7 +164,7 @@ const Home = () => {
                   >
                     {product.images && product.images[0] && (
                       <img
-                        src={product.images[0]}
+                        src={resolveAssetUrl(product.images[0])}
                         alt={product.name}
                         className="w-full h-64 object-cover"
                       />

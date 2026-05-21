@@ -7,6 +7,7 @@ import VirtualTryOnModal from '../components/VirtualTryOnModal';
 import ReviewList from '../components/ReviewList';
 import WriteReviewForm from '../components/WriteReviewForm';
 import api from '../utils/api';
+import { resolveAssetUrl } from '../utils/env.js';
 
 const ProductDetail = () => {
   const { id } = useParams();
@@ -170,7 +171,7 @@ const ProductDetail = () => {
         <div>
           {product.images && product.images[0] && (
             <img
-              src={product.images[0]}
+              src={resolveAssetUrl(product.images[0])}
               alt={product.name}
               className="w-full h-98 object-cover rounded-lg"
             />

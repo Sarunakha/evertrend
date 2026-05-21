@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { resolveAssetUrl } from '../utils/env.js';
 import { FiArrowLeft } from 'react-icons/fi';
 
 const VirtualTryOnPage = () => {
@@ -85,7 +86,7 @@ const VirtualTryOnPage = () => {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {products.map((product) => {
-              const img = product.images?.[0];
+              const img = resolveAssetUrl(product.images?.[0]);
               return (
                 <button
                   key={product._id}

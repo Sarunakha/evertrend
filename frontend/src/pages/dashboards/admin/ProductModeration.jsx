@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Flag, Trash2, Search, Package } from 'lucide-react';
 import api from '../../../utils/api';
+import { resolveAssetUrl } from '../../../utils/env.js';
 import DangerZone from '../../../components/DangerZone';
 
 const ProductModeration = () => {
@@ -134,7 +135,7 @@ const ProductModeration = () => {
             >
               {product.images && product.images[0] && (
                 <img
-                  src={product.images[0]}
+                  src={resolveAssetUrl(product.images[0])}
                   alt={product.name}
                   className="w-full h-48 object-cover"
                 />

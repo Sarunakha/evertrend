@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiPackage, FiRefreshCw, FiX, FiCheckCircle } from 'react-icons/fi';
 import api from '../../../utils/api';
+import { resolveAssetUrl } from '../../../utils/env.js';
 import CancelOrderModal from '../../../components/CancelOrderModal';
 
 const Orders = () => {
@@ -278,7 +279,7 @@ const Orders = () => {
                         <div className="flex items-center space-x-3 flex-1">
                           {item.productId?.images?.[0] && (
                             <img
-                              src={item.productId.images[0]}
+                              src={resolveAssetUrl(item.productId.images[0])}
                               alt={item.productId.name}
                               className="w-16 h-16 object-cover rounded"
                             />
@@ -346,7 +347,7 @@ const Orders = () => {
                   <div className="flex items-center space-x-3">
                     {selectedItem.productId?.images?.[0] && (
                       <img
-                        src={selectedItem.productId.images[0]}
+                        src={resolveAssetUrl(selectedItem.productId.images[0])}
                         alt={selectedItem.productId.name}
                         className="w-16 h-16 object-cover rounded"
                       />

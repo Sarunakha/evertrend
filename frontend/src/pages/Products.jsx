@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
+import { resolveAssetUrl } from '../utils/env.js';
 import { FiSearch, FiFilter } from 'react-icons/fi';
 
 const Products = () => {
@@ -259,7 +260,7 @@ const Products = () => {
               >
                 {product.images && product.images[0] && (
                   <img
-                    src={product.images[0]}
+                    src={resolveAssetUrl(product.images[0])}
                     alt={product.name}
                     className="w-full h-64 object-cover"
                   />

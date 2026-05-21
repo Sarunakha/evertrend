@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FiPackage, FiEye, FiX, FiCheck, FiXCircle } from 'react-icons/fi';
 import api from '../../../utils/api';
+import { resolveAssetUrl } from '../../../utils/env.js';
 
 const AdminOrderList = () => {
   const [orders, setOrders] = useState([]);
@@ -349,7 +350,7 @@ const AdminOrderList = () => {
                     >
                       {item.productId?.images?.[0] && (
                         <img
-                          src={item.productId.images[0]}
+                          src={resolveAssetUrl(item.productId.images[0])}
                           alt={item.productId.name}
                           className="w-16 h-16 object-cover rounded"
                         />

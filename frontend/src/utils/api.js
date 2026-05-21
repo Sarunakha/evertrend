@@ -32,6 +32,13 @@ api.interceptors.response.use(
       console.error('Access forbidden:', error.response?.data?.message);
     }
 
+    const contentType = error.response?.headers?.['content-type'] || '';
+    if (contentType.includes('text/html')) {
+      console.error(
+        'API returned HTML instead of JSON. Set VITE_API_URL to your backend URL and disable Vercel Deployment Protection on the backend (or use a public production backend URL).'
+      );
+    }
+
     if (error.code === 'ECONNREFUSED' || error.message?.includes('ECONNREFUSED')) {
       console.error('Unable to reach API server. Check VITE_API_URL or start the backend locally.');
       return Promise.reject({

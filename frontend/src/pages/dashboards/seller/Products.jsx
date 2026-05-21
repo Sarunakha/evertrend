@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../../utils/api';
+import { resolveAssetUrl } from '../../../utils/env.js';
 import { FiPlus, FiEdit, FiTrash2, FiX, FiImage } from 'react-icons/fi';
 
 const Products = () => {
@@ -574,7 +575,7 @@ const Products = () => {
           <div key={product._id} className="border rounded-lg p-4">
             {product.images && product.images.length > 0 && product.images[0] ? (
               <img
-                src={product.images[0]}
+                src={resolveAssetUrl(product.images[0])}
                 alt={product.name}
                 className="w-full h-48 object-cover rounded-md mb-4"
                 onError={(e) => {
