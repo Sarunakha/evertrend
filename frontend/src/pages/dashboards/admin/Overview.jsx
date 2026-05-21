@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Shield, Activity, Flag } from 'lucide-react';
 import api from '../../../utils/api';
+import { getApiBaseUrl } from '../../../utils/env.js';
 import MonthlySalesReport from './MonthlySalesReport';
 
 const Overview = () => {
@@ -23,7 +24,8 @@ const Overview = () => {
       return;
     }
 
-    const es = new EventSource(`/api/admin/live-sales?token=${encodeURIComponent(token)}`);
+    const liveSalesUrl = `${getApiBaseUrl()}/admin/live-sales?token=${encodeURIComponent(token)}`;
+    const es = new EventSource(liveSalesUrl);
     setLiveFeedStatus('connecting');
 
     const onReady = () => setLiveFeedStatus('connected');

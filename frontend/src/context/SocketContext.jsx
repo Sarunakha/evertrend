@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { getSocketUrl } from '../utils/env.js';
 
 const SocketContext = createContext();
 
@@ -21,10 +22,13 @@ export const SocketProvider = ({ children }) => {
     if (user) {
       const token = localStorage.getItem('token');
       if (!token) return;
-      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5001';
-      const newSocket = io(backendUrl, {
+      const socketUrl = getSocketUrl();
+      if (!socketUrl) return;
+
+      const newSocket = io(socketUrl, {
         auth: { token },
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        path: '/socket.io'
       });
       newSocket.on('connect', () => {
         newSocket.emit('addUser', user._id);

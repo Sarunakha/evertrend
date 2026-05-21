@@ -5,10 +5,9 @@ import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// eSewa Test Environment Credentials
-// In a real app, these should be in process.env
-const ESEWA_PRODUCT_CODE = 'EPAYTEST';
-const ESEWA_SECRET_KEY = '8gBm/:&EnhH.1/q';
+// eSewa credentials — set in Vercel/production environment variables
+const ESEWA_PRODUCT_CODE = process.env.ESEWA_PRODUCT_CODE || 'EPAYTEST';
+const ESEWA_SECRET_KEY = process.env.ESEWA_SECRET_KEY || '8gBm/:&EnhH.1/q';
 const ESEWA_FORM_URL = 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
 
 // @route   POST /api/payment/esewa
