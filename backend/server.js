@@ -44,30 +44,84 @@ if (!isVercel) {
 
 const app = express();
 
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://localhost:3000',
-  'http://localhost:3002',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:3002'
-].filter(Boolean);
+const buildAllowedOrigins = () => {
+  const fromList = (process.env.FRONTEND_URLS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-// Allow all *.vercel.app preview URLs for frontend
+  return [
+    process.env.FRONTEND_URL,
+    ...fromList,
+    'http://localhost:3000',
+    'http://localhost:3002',
+    'http://localhost:5173', // Added standard Vite port
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3002',
+    'http://127.0.0.1:5173',
+    'https://evertrend-frontend.vercel.app'
+  ]
+    .map((o) => o?.replace(/\/$/, ''))
+    .filter(Boolean);
+};
+
+/** Allow Vercel frontends/backends (incl. git branch URLs like *-git-*-*.vercel.app) */
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
-  if (!isProduction) return true;
-  if (allowedOrigins.includes(origin)) return true;
-  if (/^https:\/\/[\w-]+\.vercel\.app$/i.test(origin)) return true;
+  
+  const normalized = origin.replace(/\/$/, '');
+  
+  // 1. Explicitly check our hardcoded list and environment variables
+  if (buildAllowedOrigins().includes(normalized)) return true;
+
+  // 2. Safely match any vercel production or preview URL domains
+  if (/^https:\/\/([a-z0-9-]+\.)*vercel\.app$/i.test(normalized)) return true;
+  if (normalized.includes('evertrend-frontend')) return true;
+
   return false;
 };
+
+const applyCorsHeaders = (req, res) => {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
+};
+
+// Handle preflight before DB middleware (fixes "No Access-Control-Allow-Origin" on OPTIONS)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Requested-With, Accept, Origin'
+    );
+    res.setHeader('Access-Control-Max-Age', '86400');
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (isAllowedOrigin(origin)) return callback(null, true);
-      return callback(new Error(`CORS blocked for origin: ${origin}`));
+      if (!origin || isAllowedOrigin(origin)) {
+        return callback(null, origin || true);
+      }
+      console.warn('CORS rejected origin:', origin);
+      return callback(null, false);
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
   })
 );
 
@@ -124,7 +178,12 @@ app.get('/api/health', async (req, res) => {
 });
 
 const dbMiddleware = async (req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   if (!isDatabaseConfigured()) {
+    applyCorsHeaders(req, res);
     return res.status(503).json({
       success: false,
       message: 'Database is not configured.',
@@ -139,6 +198,7 @@ const dbMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Database connection failed:', error.message);
+    applyCorsHeaders(req, res);
     return res.status(503).json({
       success: false,
       message: 'Service temporarily unavailable. Please try again later.',
@@ -149,6 +209,7 @@ const dbMiddleware = async (req, res, next) => {
 
 if (isVercel) {
   app.use('/api', (req, res, next) => {
+    if (req.method === 'OPTIONS') return next();
     if (req.path === '/health') return next();
     return dbMiddleware(req, res, next);
   });
@@ -179,12 +240,7 @@ app.use((err, req, res, next) => {
   console.error('Global error handler:', err.message);
   if (showDebugErrors) console.error('Error stack:', err.stack);
 
-  if (err.message?.includes('CORS blocked')) {
-    return res.status(403).json({
-      success: false,
-      message: 'Request not allowed from this origin.'
-    });
-  }
+  applyCorsHeaders(req, res);
 
   if (err.type === 'entity.parse.failed') {
     return res.status(400).json({
@@ -258,7 +314,3 @@ if (!isVercel) {
 }
 
 export default app;
-
-if (typeof module !== 'undefined') {
-  module.exports = app;
-}
