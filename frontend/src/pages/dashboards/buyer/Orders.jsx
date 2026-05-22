@@ -5,8 +5,16 @@ import api from '../../../utils/api';
 import { resolveAssetUrl } from '../../../utils/env.js';
 import CancelOrderModal from '../../../components/CancelOrderModal';
 
+const REFUND_STATUS_LABELS = {
+  Pending: 'Return requested',
+  Approved: 'Return approved',
+  Refunded: 'Refunded',
+  Rejected: 'Return rejected'
+};
+
 const Orders = () => {
   const [orders, setOrders] = useState([]);
+  const [refundRequests, setRefundRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -47,8 +55,12 @@ const Orders = () => {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/orders');
-      setOrders(response.data.data);
+      const [ordersResponse, refundsResponse] = await Promise.all([
+        api.get('/orders'),
+        api.get('/refunds', { params: { limit: 200 } })
+      ]);
+      setOrders(ordersResponse.data.data || []);
+      setRefundRequests(refundsResponse.data.data || []);
     } catch (error) {
       console.error('Error fetching orders:', error);
     } finally {
@@ -56,7 +68,31 @@ const Orders = () => {
     }
   };
 
+  const getRefundForItem = (orderId, productId) => {
+    const orderKey = orderId?.toString?.() || String(orderId);
+    const productKey = productId?.toString?.() || String(productId);
+    return refundRequests.find((refund) => {
+      const refundOrderId = (refund.orderId?._id || refund.orderId)?.toString();
+      const refundProductId = (refund.productId?._id || refund.productId)?.toString();
+      return refundOrderId === orderKey && refundProductId === productKey;
+    });
+  };
+
+  const canRequestReturn = (orderId, productId) => {
+    const existing = getRefundForItem(orderId, productId);
+    return !existing || existing.status === 'Rejected';
+  };
+
   const handleReturnClick = (order, item) => {
+    const productId = item.productId?._id || item.productId;
+    if (!canRequestReturn(order._id, productId)) {
+      const existing = getRefundForItem(order._id, productId);
+      showToast(
+        REFUND_STATUS_LABELS[existing?.status] || 'Return already submitted for this item',
+        'error'
+      );
+      return;
+    }
     setSelectedOrder(order);
     setSelectedItem(item);
     setShowReturnModal(true);
@@ -99,7 +135,7 @@ const Orders = () => {
       showToast('Return request submitted successfully!', 'success');
       setShowReturnModal(false);
       setReturnForm({ reason: '', images: [] });
-      fetchOrders(); // Refresh orders
+      await fetchOrders();
     } catch (error) {
       console.error('Error submitting return request:', error);
       showToast(error.response?.data?.message || 'Error submitting return request', 'error');
@@ -297,16 +333,39 @@ const Orders = () => {
                           <p className="font-semibold text-gray-900">
                             Rs. {(item.unitPrice * item.quantity)?.toFixed(2) || '0.00'}
                           </p>
-                          {order.status === 'Delivered' && (
-                            <button
-                              onClick={() => handleReturnClick(order, item)}
-                              className="mt-2 flex items-center space-x-1 px-3 py-1 text-sm rounded-md hover:opacity-90 transition"
-                              style={{ backgroundColor: '#fab242', color: 'white' }}
-                            >
-                              <FiRefreshCw className="h-4 w-4" />
-                              <span>Return Item</span>
-                            </button>
-                          )}
+                          {order.status === 'Delivered' && (() => {
+                            const productId = item.productId?._id || item.productId;
+                            const existingRefund = getRefundForItem(order._id, productId);
+                            const returnAllowed = canRequestReturn(order._id, productId);
+
+                            if (returnAllowed) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReturnClick(order, item)}
+                                  className="mt-2 flex items-center space-x-1 px-3 py-1 text-sm rounded-md hover:opacity-90 transition"
+                                  style={{ backgroundColor: '#fab242', color: 'white' }}
+                                >
+                                  <FiRefreshCw className="h-4 w-4" />
+                                  <span>Return Item</span>
+                                </button>
+                              );
+                            }
+
+                            return (
+                              <p
+                                className={`mt-2 text-sm font-medium ${
+                                  existingRefund?.status === 'Refunded'
+                                    ? 'text-green-700'
+                                    : existingRefund?.status === 'Rejected'
+                                      ? 'text-red-700'
+                                      : 'text-amber-700'
+                                }`}
+                              >
+                                {REFUND_STATUS_LABELS[existingRefund?.status] || 'Return submitted'}
+                              </p>
+                            );
+                          })()}
                         </div>
                       </div>
                     ))}
