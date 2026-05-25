@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { normalizeImageUrl } from '../utils/imageUrls.js';
 
 const sizeChartEntrySchema = new mongoose.Schema({
   chest: { type: Number },
@@ -115,6 +116,20 @@ productSchema.index({ createdAt: -1 });
 
 // Text index for search
 productSchema.index({ name: 'text', description: 'text' });
+
+// Normalize image URLs whenever products are sent as JSON (HTTPS, no localhost in prod)
+productSchema.set('toJSON', {
+  virtuals: true,
+  transform(_doc, ret) {
+    if (Array.isArray(ret.images)) {
+      ret.images = ret.images.map((img) => normalizeImageUrl(img)).filter(Boolean);
+    }
+    if (ret.vtoImage) {
+      ret.vtoImage = normalizeImageUrl(ret.vtoImage);
+    }
+    return ret;
+  }
+});
 
 export default mongoose.model('Product', productSchema);
 

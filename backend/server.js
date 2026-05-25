@@ -36,7 +36,7 @@ if (!isVercel) {
   if (!process.env.JWT_SECRET) missing.push('JWT_SECRET');
   if (!isDatabaseConfigured()) missing.push('MONGODB_URI');
   if (missing.length > 0) {
-    console.error('\n❌ Missing required environment variables:');
+    console.error('\n Missing required environment variables:');
     missing.forEach((key) => console.error(`   - ${key}`));
     process.exit(1);
   }
@@ -59,11 +59,17 @@ const buildAllowedOrigins = () => {
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3002',
     'http://127.0.0.1:5173',
-    'https://evertrend-frontend.vercel.app'
+    'https://evertrend-frontend.vercel.app/'
   ]
     .map((o) => o?.replace(/\/$/, ''))
     .filter(Boolean);
 };
+
+const corsOptions = {
+  origin: process.env.FRONTEND_URL, // e.g., "https://evertrend-frontend.vercel.app"
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
 /** Allow Vercel frontends/backends (incl. git branch URLs like *-git-*-*.vercel.app) */
 const isAllowedOrigin = (origin) => {

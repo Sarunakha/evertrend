@@ -58,5 +58,15 @@ refundRequestSchema.index({ userId: 1, createdAt: -1 });
 refundRequestSchema.index({ sellerId: 1, status: 1 });
 refundRequestSchema.index({ orderId: 1, productId: 1 });
 refundRequestSchema.index({ status: 1, createdAt: -1 });
+// Prevent duplicate active/completed returns for the same buyer + order + product
+refundRequestSchema.index(
+  { orderId: 1, productId: 1, userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ['Pending', 'Approved', 'Refunded'] }
+    }
+  }
+);
 
 export default mongoose.model('RefundRequest', refundRequestSchema);

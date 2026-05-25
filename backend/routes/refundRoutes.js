@@ -77,18 +77,22 @@ router.post('/', [
       });
     }
 
-    // Check if refund request already exists for this order item
+    // One return per order item; allow a new request only if the previous was rejected
     const existingRequest = await RefundRequest.findOne({
       orderId: order._id,
-      productId: productId,
+      productId,
       userId: req.user._id,
-      status: { $in: ['Pending', 'Approved'] }
+      status: { $ne: 'Rejected' }
     });
 
     if (existingRequest) {
+      const statusLabel =
+        existingRequest.status === 'Refunded'
+          ? 'already refunded'
+          : `already ${existingRequest.status.toLowerCase()}`;
       return res.status(400).json({
         success: false,
-        message: 'A refund request already exists for this item'
+        message: `A return request for this item is ${statusLabel}. You cannot submit another request.`
       });
     }
 
@@ -139,6 +143,12 @@ router.post('/', [
       data: populatedRequest
     });
   } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'A return request for this item already exists.'
+      });
+    }
     console.error('Create refund request error:', error);
     res.status(500).json({
       success: false,
