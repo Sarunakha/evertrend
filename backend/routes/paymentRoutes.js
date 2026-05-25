@@ -64,28 +64,50 @@ router.post('/esewa', [
 
     // 6. Configurable Success/Failure URLs
     // Ensure these point to your frontend routes
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002'; // Adjust port if needed
-    const success_url = `${frontendUrl}/payment/success`;
-    const failure_url = `${frontendUrl}/payment/failure`;
+    
+    // const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002'; // Adjust port if needed
+    // const success_url = `${frontendUrl}/payment/success`;
+    // const failure_url = `${frontendUrl}/payment/failure`;
 
     // 7. Prepare Form Data
     // CRITICAL: 'amount' field in form is the PRODUCT PRICE, not the total.
     // 'total_amount' is the SUM.
     // Since tax is 0, they happen to be equal here, but logically they are different fields.
-    const formData = {
-      amount: baseAmount.toFixed(2), // Product Price
-      failure_url: failure_url,
-      product_delivery_charge: product_delivery_charge,
-      product_service_charge: product_service_charge,
-      product_code: ESEWA_PRODUCT_CODE,
-      signature: signature,
-      signed_field_names: 'total_amount,transaction_uuid,product_code',
-      success_url: success_url,
-      tax_amount: tax_amount,
-      total_amount: totalAmountStr, // The sum used in signature
-      transaction_uuid: transactionUuidStr
+    const handleEsewaPayment = (paymentData, signature) => {
+      // 1. Create the form dynamically
+      const form = document.createElement("form");
+      form.setAttribute("method", "POST");
+      form.setAttribute("action", "https://rc-epay.esewa.com.np/api/epay/main/v2/form"); // Sandbox URL
+    
+      // 2. Define the exact payload eSewa expects
+      const formData = {
+        amount: paymentData.amount,
+        tax_amount: "0",
+        total_amount: paymentData.amount,
+        transaction_uuid: paymentData.transaction_uuid,
+        product_code: "EPAYTEST", // Mandatory for sandbox
+        product_service_charge: "0",
+        product_delivery_charge: "0",
+        success_url: "https://evertrend-frontend.vercel.app/payment-success", // MUST be your deployed URL
+        failure_url: "https://evertrend-frontend.vercel.app/payment-failure", // MUST be your deployed URL
+        signed_field_names: "total_amount,transaction_uuid,product_code",
+        signature: signature // Generated from your backend
+      };
+    
+      // 3. Append inputs to the form
+      for (const key in formData) {
+        const hiddenField = document.createElement("input");
+        hiddenField.setAttribute("type", "hidden");
+        hiddenField.setAttribute("name", key);
+        hiddenField.setAttribute("value", formData[key]);
+        form.appendChild(hiddenField);
+      }
+    
+      // 4. Attach to body and submit
+      document.body.appendChild(form);
+      form.submit();
     };
-
+    
     res.json({
       success: true,
       data: {
