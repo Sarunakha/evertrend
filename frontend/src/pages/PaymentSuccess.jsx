@@ -1,43 +1,63 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams, Link, useLocation } from 'react-router-dom';
+import { useSearchParams, Link, useLocation } from 'react-router-dom';
 import { FiCheckCircle, FiArrowLeft, FiStar } from 'react-icons/fi';
+import api from '../utils/api';
 
 const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const navigate = useNavigate();
   const [paymentData, setPaymentData] = useState(null);
   const [orderData, setOrderData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [devNote, setDevNote] = useState('');
 
   useEffect(() => {
-    // Get order data from location state (if redirected from checkout)
-    if (location.state?.order) {
-      setOrderData(location.state.order);
-    }
-
-    // Get the data parameter from URL
-    const dataParam = searchParams.get('data');
-    
-    if (dataParam) {
-      try {
-        // Decode Base64 string
-        const decodedData = atob(dataParam);
-        const parsedData = JSON.parse(decodedData);
-        setPaymentData(parsedData);
-      } catch (error) {
-        console.error('Error decoding payment data:', error);
-        // If decoding fails, try to parse as query string
-        const params = new URLSearchParams(dataParam);
-        const data = {};
-        params.forEach((value, key) => {
-          data[key] = value;
-        });
-        setPaymentData(data);
+    const run = async () => {
+      if (location.state?.order) {
+        setOrderData(location.state.order);
       }
-    }
-    
-    setLoading(false);
+
+      const orderId =
+        searchParams.get('orderId') ||
+        sessionStorage.getItem('esewa_pending_order_id');
+
+      if (searchParams.get('devMock') === '1' && orderId) {
+        try {
+          const res = await api.post('/payment/esewa/dev-complete', { orderId });
+          if (res.data?.data?.order) setOrderData(res.data.data.order);
+          setDevNote(
+            'Local test payment completed. eSewa sandbox (rc-epay) is currently unavailable — your order was marked paid for development only.'
+          );
+          sessionStorage.removeItem('esewa_pending_order_id');
+        } catch (error) {
+          console.error('Dev payment complete error:', error);
+        }
+        setLoading(false);
+        return;
+      }
+
+      const dataParam = searchParams.get('data');
+
+      if (dataParam) {
+        try {
+          const decodedData = atob(dataParam);
+          setPaymentData(JSON.parse(decodedData));
+        } catch (error) {
+          console.error('Error decoding payment data:', error);
+          const params = new URLSearchParams(dataParam);
+          const data = {};
+          params.forEach((value, key) => {
+            data[key] = value;
+          });
+          setPaymentData(data);
+        }
+        sessionStorage.removeItem('esewa_pending_order_id');
+      }
+
+      setLoading(false);
+    };
+
+    run();
   }, [searchParams, location]);
 
   if (loading) {
@@ -62,6 +82,12 @@ const PaymentSuccess = () => {
         <p className="text-gray-600 mb-6">
           Thank you for your purchase. Your order has been confirmed and will be processed shortly.
         </p>
+
+        {devNote && (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3 mb-6 text-left">
+            {devNote}
+          </p>
+        )}
 
         {/* Points Earned Banner */}
         {orderData?.pointsEarned && orderData.pointsEarned > 0 && (

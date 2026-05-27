@@ -5,8 +5,12 @@
 
 const trimTrailingSlash = (url) => (url || '').replace(/\/$/, '');
 
-/** Backend origin without /api suffix (e.g. https://api.example.com) */
-export const getApiOrigin = () => trimTrailingSlash(import.meta.env.VITE_API_URL || '');
+/** Backend origin without /api suffix — used for eSewa server redirect */
+export const getApiOrigin = () => {
+  const apiUrl = trimTrailingSlash(import.meta.env.VITE_API_URL || '');
+  if (apiUrl) return apiUrl;
+  return trimTrailingSlash(import.meta.env.VITE_BACKEND_URL || '');
+};
 
 /** Axios base URL — production uses full API URL; dev defaults to Vite proxy */
 export const getApiBaseUrl = () => {
@@ -22,56 +26,15 @@ export const getSocketUrl = () => {
   return '';
 };
 
-const isLocalHost = (hostname) =>
-  hostname === 'localhost' ||
-  hostname === '127.0.0.1' ||
-  hostname.endsWith('.local');
-
-/** Resolve product/VTO image paths for production (HTTPS, API origin, no localhost) */
+/** Resolve product/VTO image paths for production (supports absolute URLs and relative paths) */
 export const resolveAssetUrl = (src) => {
   if (!src || typeof src !== 'string') return '';
-
-  let url = src.trim();
-  if (!url) return '';
-
-  if (url.startsWith('//')) {
-    url = `https:${url}`;
+  if (/^https?:\/\//i.test(src) || src.startsWith('data:') || src.startsWith('blob:')) {
+    return src;
   }
-
-  if (url.startsWith('data:') || url.startsWith('blob:')) {
-    return url;
-  }
-
   const origin = getApiOrigin();
-
-  if (url.startsWith('/') && !url.startsWith('//') && origin) {
-    return `${origin}${url}`;
+  if (origin && src.startsWith('/')) {
+    return `${origin}${src}`;
   }
-
-  if (/^https?:\/\//i.test(url)) {
-    try {
-      const parsed = new URL(url);
-
-      if (isLocalHost(parsed.hostname) && origin) {
-        return `${origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
-      }
-
-      // Mixed content: HTTPS pages block http:// images
-      if (
-        typeof window !== 'undefined' &&
-        window.location.protocol === 'https:' &&
-        parsed.protocol === 'http:' &&
-        !isLocalHost(parsed.hostname)
-      ) {
-        parsed.protocol = 'https:';
-        return parsed.toString();
-      }
-
-      return parsed.toString();
-    } catch {
-      return url;
-    }
-  }
-
-  return url;
+  return src;
 };
