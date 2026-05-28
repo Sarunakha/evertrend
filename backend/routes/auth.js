@@ -51,7 +51,7 @@ router.post('/request-otp', async (req, res) => {
     
     // Strict check: if validation result is missing or invalid, reject
     if (!emailValidation || !emailValidation.valid) {
-      console.log(`❌ Email validation failed for: ${normalizedEmail} - ${emailValidation?.error || 'Unknown error'}`);
+      console.log(` Email validation failed for: ${normalizedEmail} - ${emailValidation?.error || 'Unknown error'}`);
       return res.status(400).json({
         success: false,
         message: emailValidation?.error || 'Invalid email address. Please use a real email address with a valid domain.'
