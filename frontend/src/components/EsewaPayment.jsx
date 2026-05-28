@@ -16,6 +16,7 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
         quantity: item.quantity
       }));
 
+      // 1. Create the backend order first to register it in MongoDB
       const orderResponse = await api.post('/orders', {
         items: orderItems,
         paymentMethod: 'eSewa',
@@ -30,10 +31,21 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
       const order = orderResponse.data.data;
       const orderAmount = order.totalAmount || amount;
 
+      // 🚀 CRITICAL FIX: Extract the freshly generated MongoDB order _id
+      const orderId = order._id || order.id;
+
+      if (!orderId) {
+        throw new Error('Order creation succeeded, but no valid Order ID was returned from server.');
+      }
+
+      // Clear the local state cart since the order is locked in the database
       await clearCart();
 
+      // 2. Request the secure eSewa parameters and cryptographic signature fields
+      // 🚀 FIXED: orderId is now passed to satisfy backend express-validator checks
       const response = await api.post('/payment/esewa', {
         amount: orderAmount,
+        orderId: orderId,
         products: orderItems
       });
 
@@ -47,6 +59,7 @@ const EsewaPayment = ({ amount, products = [], shippingAddress = {}, couponCode 
         throw new Error('Invalid payment form data received from server');
       }
 
+      // 3. Build and execute the hidden form posting to redirect away to eSewa
       const form = document.createElement('form');
       form.method = 'POST';
       form.action = formUrl.trim();

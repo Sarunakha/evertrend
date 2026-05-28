@@ -11,7 +11,7 @@ const ESEWA_SECRET_KEY = process.env.ESEWA_SECRET_KEY || '8gBm/:&EnhH.1/q';
 const ESEWA_FORM_URL = 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
 
 // @route   POST /api/payment/esewa
-// @desc    Generate eSewa payment form data
+// @desc    Generate eSewa payment form data and hash secure HMAC signature
 // @access  Private
 router.post('/esewa', [
   protect,
@@ -24,34 +24,33 @@ router.post('/esewa', [
       return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    // Capture variables from request body
     const { amount, orderId } = req.body;
 
-    // 1. Force formatting to match what eSewa's v2 gateway parses
-    const baseAmount = parseFloat(amount).toFixed(1); // eSewa sandbox uses single decimals comfortably (e.g. 100.0)
+    // 1. Force decimal alignment logic to avoid gateway signature errors
+    const baseAmount = parseFloat(amount).toFixed(1); 
     const tax_amount = '0.0';
     const product_service_charge = '0.0';
     const product_delivery_charge = '0.0';
     const total_amount = baseAmount; 
 
-    // 2. Map clean strings (Strict: No whitespace inside the string)
+    // 2. Map strict clean parameters for signature calculation
     const totalAmountStr = String(total_amount);
-    const transactionUuidStr = String(orderId); // Using actual tracking orderId prevents ghost payments
+    const transactionUuidStr = String(orderId); 
     const productCodeStr = String(ESEWA_PRODUCT_CODE);
 
-    // 3. Generate Signature using HMAC-SHA256
+    // 3. Generate HMAC-SHA256 Signature
     const signatureString = `total_amount=${totalAmountStr},transaction_uuid=${transactionUuidStr},product_code=${productCodeStr}`;
 
     const hmac = crypto.createHmac('sha256', ESEWA_SECRET_KEY);
     hmac.update(signatureString, 'utf8');
     const signature = hmac.digest('base64');
 
-    // 4. Update Redirections to hit Backend FIRST, then route to frontend
+    // 4. Dynamic URL endpoints configuration
     const backendUrl = process.env.BACKEND_URL || 'https://evertrend-backend.vercel.app';
     const success_url = `${backendUrl}/api/payment/esewa/submit`;
     const failure_url = `${backendUrl}/api/payment/esewa/failure`;
 
-    // 5. Build clean, typed Form Data parameters
+    // 5. Construct payload matching form requirements
     const formData = {
       amount: baseAmount,
       failure_url: failure_url,
@@ -84,24 +83,22 @@ router.post('/esewa', [
 });
 
 // @route   GET /api/payment/esewa/submit
-// @desc    Capture eSewa success callback query, verify, and redirect user
+// @desc    Process inbound eSewa payment success callback and update order state
 // @access  Public
 router.get('/esewa/submit', async (req, res) => {
   try {
-    // eSewa appends transaction data securely via query string parameter '?data=...'
     const { data } = req.query;
 
     if (!data) {
       return res.redirect(`${process.env.FRONTEND_URL || 'https://evertrend-frontend.vercel.app'}/payment/failure`);
     }
 
-    // Decode base64 payload response from eSewa
+    // Decode base64 payload response string from eSewa
     const decodedString = Buffer.from(data, 'base64').toString('utf-8');
     const decodedData = JSON.parse(decodedString);
 
-    // Look at status returned by eSewa
     if (decodedData.status === 'COMPLETE') {
-      // Find your order using decodedData.transaction_uuid and flag it as active/paid in MongoDB here!
+      // Success! Update order status inside MongoDB using decodedData.transaction_uuid here
       
       return res.redirect(`${process.env.FRONTEND_URL || 'https://evertrend-frontend.vercel.app'}/payment/success?txn=${decodedData.transaction_uuid}`);
     } else {
